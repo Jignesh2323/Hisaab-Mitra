@@ -632,6 +632,7 @@ function renderProgram() {
   app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { state.tab = b.dataset.tab; state.q = ''; state.filter = 'all'; state.ev = ''; saveRoute(false); renderProgram(); });
   if (fab) $('#fab').onclick = () => state.tab === 'members' ? memberForm() : expenseForm();
   bindProgram();
+  bigStatIcons();
 }
 
 function summaryView(d, c) {
@@ -1029,6 +1030,17 @@ function bindProgram() {
   on('pdfBtn', exportPdf);
   on('xlsBtn', exportExcel);
   on('bakBtn', backup);
+}
+
+// Stat box ke label ka emoji alag karke bada dikhao (box ke upar)
+function bigStatIcons() {
+  app.querySelectorAll('.stat > .label').forEach(l => {
+    const m = l.textContent.match(/^\s*(\p{Extended_Pictographic}️?)\s*/u);
+    if (!m || l.parentElement.querySelector('.stat-ico')) return;
+    l.textContent = l.textContent.slice(m[0].length);
+    const i = document.createElement('div'); i.className = 'stat-ico'; i.textContent = m[1];
+    l.parentElement.prepend(i);
+  });
 }
 
 // ---------- member forms ----------
