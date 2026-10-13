@@ -26,25 +26,6 @@ function newCode() {
   return Array.from(a, x => chars[x % chars.length]).join('');
 }
 
-// Space: har vyakti / society ka alag data. Ek phone me kai space ho sakte hain (personal + link wale).
-const spaces = {
-  list() { return store.get('hm_spaces', []); },
-  get current() { return store.get('hm_space', ''); },
-  add(code, name) {
-    const l = spaces.list().filter(x => x.code !== code);
-    l.push({ code, name: name || l.find(x => x.code === code)?.name || 'Space' });
-    store.set('hm_spaces', l);
-  },
-  use(code, name) { spaces.add(code, name); store.set('hm_space', code); },
-  name(code = spaces.current) { return spaces.list().find(x => x.code === code)?.name || 'Space'; },
-};
-const SPACE = spaces.current;
-const spaceLink = code => `${location.origin}${location.pathname}#space=${code}`;
-function newSpaceCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from(crypto.getRandomValues(new Uint8Array(12)), x => chars[x % chars.length]).join('');
-}
-
 // Har program ka apna client, jo share code header me bhejta hai (database isi se access deta hai)
 const clients = {};
 function db(code) {
@@ -73,6 +54,26 @@ function saveMyProgram(p) {
   store.set('hm_programs', list);
 }
 const forgetProgram = code => store.set('hm_programs', myPrograms().filter(x => x.code !== code));
+
+// Space: har vyakti / society ka alag data. Ek phone me kai space ho sakte hain (personal + link wale).
+const spaces = {
+  list() { return store.get('hm_spaces', []); },
+  get current() { return store.get('hm_space', ''); },
+  add(code, name) {
+    const l = spaces.list().filter(x => x.code !== code);
+    l.push({ code, name: name || l.find(x => x.code === code)?.name || 'Space' });
+    store.set('hm_spaces', l);
+  },
+  use(code, name) { spaces.add(code, name); store.set('hm_space', code); },
+  name(code = spaces.current) { return spaces.list().find(x => x.code === code)?.name || 'Space'; },
+};
+const SPACE = spaces.current;
+const spaceLink = code => `${location.origin}${location.pathname}#space=${code}`;
+function newSpaceCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from(crypto.getRandomValues(new Uint8Array(12)), x => chars[x % chars.length]).join('');
+}
+
 
 // ---------- theme ----------
 function applyTheme(t) {
