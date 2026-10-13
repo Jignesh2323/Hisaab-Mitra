@@ -298,3 +298,122 @@ body:has(.tabs) .toast { bottom: 160px; }
 .prog-amt { text-align: right; flex: none; display: flex; flex-direction: column; }
 .prog-amt b { font-size: 16px; color: var(--pc); }
 .prog-amt .muted { font-size: 11px; }
+
+/* ================= KCT3 jaisa look (upar ke style ko override karta hai) ================= */
+:root {
+  --bg: #F3F4F8; --bg2: #F3F4F8; --card: #FFFFFF; --text: #14162B; --muted: #6B7280; --line: #E4E6EF;
+  --green: #15803D; --red: #B91C1C; --amber: #B45309;
+  --hl: rgba(255,255,255,.85); --hl-soft: rgba(255,255,255,.55);
+  --shadow: 0 1px 2px rgba(20,22,43,.04), 0 8px 24px rgba(20,22,43,.07);
+  --shadow-3d: inset 0 1px 0 var(--hl), 0 1px 2px rgba(20,22,43,.06), 0 10px 22px -8px rgba(20,22,43,.18);
+  --radius: 14px;
+  /* Theme rang (Settings se badalta hai) — default Indigo */
+  --primary: #4F46E5; --primary2: #7C3AED; --deep: #3730A3; --ink-accent: #3D34C9; --primary-soft: #EEF2FF; --glow: rgba(79,70,229,.3);
+}
+:root[data-accent="teal"]   { --primary: #0D9488; --primary2: #0EA5E9; --deep: #115E59; --ink-accent: #0F766E; --primary-soft: #E6FFFA; --glow: rgba(13,148,136,.3); }
+:root[data-accent="rose"]   { --primary: #E11D48; --primary2: #DB2777; --deep: #9F1239; --ink-accent: #BE123C; --primary-soft: #FFF1F2; --glow: rgba(225,29,72,.3); }
+:root[data-accent="orange"] { --primary: #EA580C; --primary2: #F59E0B; --deep: #9A3412; --ink-accent: #C2410C; --primary-soft: #FFF7ED; --glow: rgba(234,88,12,.3); }
+:root[data-accent="green"]  { --primary: #16A34A; --primary2: #0D9488; --deep: #166534; --ink-accent: #15803D; --primary-soft: #F0FDF4; --glow: rgba(22,163,74,.3); }
+:root[data-accent="purple"] { --primary: #9333EA; --primary2: #DB2777; --deep: #6B21A8; --ink-accent: #7E22CE; --primary-soft: #FAF5FF; --glow: rgba(147,51,234,.3); }
+:root {
+  --grad: linear-gradient(135deg, var(--deep) 0%, var(--primary) 55%, var(--primary2) 100%);
+  --grad-hero: linear-gradient(135deg, var(--deep) 0%, var(--primary) 55%, var(--primary2) 100%);
+}
+:root[data-theme="dark"] {
+  --bg: #0F1020; --bg2: #0F1020; --card: #181A30; --text: #EEF0FF; --muted: #9AA0C3; --line: #272A45;
+  --green: #34D399; --red: #F87171; --amber: #FBBF24; --primary-soft: #23264A; --ink-accent: #C7D2FE;
+  --hl: rgba(255,255,255,.06); --hl-soft: rgba(255,255,255,.03);
+}
+html, body { font-family: "Inter", system-ui, sans-serif; }
+body { background: var(--bg); }
+h1, h2, h3, .sheet h2, .prog-name, .floor-title, .brand { font-family: "Space Grotesk", "Inter", sans-serif; }
+.stat .value, .amt, .prog-amt b, .floor-status, .home-hero .hero-num b { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+/* Header: KCT3 hero-banner */
+.topbar {
+  background: var(--grad-hero); border-radius: 0 0 26px 26px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), inset 0 -12px 20px -12px rgba(0,0,0,.35), 0 6px 0 var(--deep), 0 18px 30px -10px var(--glow);
+}
+.topbar::after { background: radial-gradient(circle at 88% -15%, rgba(255,255,255,.28), transparent 55%); }
+.topbar h1, .brand { text-shadow: 0 1px 0 #e6e6f0, 0 2px 0 #d2d2df, 0 3px 0 #bdbdce, 0 4px 4px rgba(0,0,0,.25), 0 8px 12px rgba(0,0,0,.25); }
+.brand-hi { text-shadow: none; }
+.icon-btn { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.4); box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 4px 0 rgba(0,0,0,.2), 0 8px 14px -6px rgba(0,0,0,.35); }
+
+/* Cards */
+.card, .list, .prog-card {
+  background-color: var(--card); background-image: linear-gradient(180deg, var(--hl-soft), rgba(255,255,255,0) 90px);
+  border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-3d);
+}
+.prog-card { border-left: 5px solid var(--pc); }
+/* Card heading: KCT3 jaisa pill (beech me, baayi patti) */
+.card > .bold:first-child, .card > .row:first-child > .bold:first-child {
+  display: block; text-align: center; font-family: "Space Grotesk", sans-serif; font-size: 16px; font-weight: 700; color: var(--ink-accent);
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0)), var(--primary-soft);
+  border-left: 4px solid var(--primary); border-radius: 10px; padding: 9px 12px; margin-bottom: 10px;
+  box-shadow: inset 0 1px 0 var(--hl), inset 0 -2px 0 rgba(20,22,43,.06), 0 3px 8px -4px rgba(20,22,43,.25);
+}
+.card > .row:first-child { flex-wrap: wrap; justify-content: center; }
+.card > .row:first-child > .bold:first-child { flex: 1 1 100%; }
+
+/* Stats: halke rang ke tile, rangin number */
+.stat {
+  --tint: var(--primary-soft); --num: var(--ink-accent);
+  display: flex; flex-direction: column; color: var(--text); text-align: center;
+  background: var(--tint); background-image: linear-gradient(180deg, var(--hl-soft), rgba(255,255,255,0) 70%);
+  border: 1px solid rgba(20,22,43,.06); border-radius: 12px; padding: 13px 14px;
+  box-shadow: inset 0 1px 0 var(--hl), inset 0 -3px 0 rgba(20,22,43,.07), 0 6px 14px -6px rgba(20,22,43,.28);
+}
+.stat::before, .stat::after { display: none; }
+.stat .value { order: -1; color: var(--num); font-size: 20px; font-weight: 700; text-shadow: 0 1px 0 var(--hl-soft); margin: 0; }
+.stat .label { color: var(--muted); font-size: 11.5px; font-weight: 600; opacity: 1; margin-top: 3px; }
+.stat .muted, .stat .small { color: var(--muted); }
+.stat .green { color: var(--green); } .stat .red { color: var(--red); } .stat .amber { color: var(--amber); }
+.stats .stat:nth-of-type(6n+1) { --tint: #ECFDF3; --num: #15803D; }
+.stats .stat:nth-of-type(6n+2) { --tint: #FFFBEB; --num: #B45309; }
+.stats .stat:nth-of-type(6n+3) { --tint: #EFF6FF; --num: #1D4ED8; }
+.stats .stat:nth-of-type(6n+4) { --tint: var(--primary-soft); --num: var(--ink-accent); }
+.stats .stat:nth-of-type(6n+5) { --tint: #FEF2F2; --num: #B91C1C; }
+.stats .stat:nth-of-type(6n)   { --tint: #ECFEFF; --num: #0E7490; }
+.stat.wide { --tint: #ECFDF3; --num: #15803D; padding: 16px; }
+.stat.wide .value { font-size: 28px; }
+.stat.wide .row { border-color: rgba(20,22,43,.1) !important; text-align: left; }
+.stat.wide .btn { background: var(--card); color: var(--primary); border-color: var(--line); }
+.stat.wide .btn.primary { background: var(--grad); color: #fff; }
+.stat.wide[style*="--g"] { --tint: #FFFBEB; --num: #B45309; }
+:root[data-theme="dark"] .stats .stat:nth-of-type(6n+1), :root[data-theme="dark"] .stat.wide { --tint: #0F2E22; --num: #34D399; }
+:root[data-theme="dark"] .stats .stat:nth-of-type(6n+2), :root[data-theme="dark"] .stat.wide[style*="--g"] { --tint: #3A2A0E; --num: #FBBF24; }
+:root[data-theme="dark"] .stats .stat:nth-of-type(6n+3) { --tint: #0E2438; --num: #60A5FA; }
+:root[data-theme="dark"] .stats .stat:nth-of-type(6n+5) { --tint: #3A1414; --num: #F87171; }
+:root[data-theme="dark"] .stats .stat:nth-of-type(6n)   { --tint: #0E2E33; --num: #22D3EE; }
+
+/* Home hero */
+.home-hero { background: var(--grad-hero); text-align: center; border-radius: 22px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), inset 0 -12px 20px -12px rgba(0,0,0,.35), 0 6px 0 var(--deep), 0 18px 30px -10px var(--glow); }
+.home-hero .hero-num { justify-content: center; }
+
+/* Neeche nav: safed bar, icon tile (KCT3 bottom-nav) */
+.tabs {
+  left: 0; right: 0; bottom: 0; transform: none; width: auto; max-width: 920px; margin: 0 auto; border-radius: 0;
+  background: rgba(255,255,255,.97); border: 0; border-top: 1px solid var(--line);
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  box-shadow: inset 0 -1px 0 var(--hl), 0 -8px 24px -8px rgba(20,22,43,.22);
+}
+:root[data-theme="dark"] .tabs { background: rgba(24,26,48,.97); }
+.tabs .tab { color: var(--muted); background: none; box-shadow: none; font-family: "Inter", sans-serif; font-size: 10.5px; font-weight: 600; gap: 3px; }
+.tabs .tab .ti { width: 34px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 10px; font-size: 19px; }
+.tabs .tab.active { color: var(--primary); background: none; box-shadow: none; }
+.tabs .tab.active .ti { background: var(--primary-soft); transform: translateY(-1px); box-shadow: inset 0 1px 0 var(--hl), 0 3px 8px -4px var(--glow); }
+body:has(.tabs) .fab { bottom: calc(env(safe-area-inset-bottom) + 76px); }
+
+/* Buttons, chips, FAB */
+.btn.primary, .fab, .chip.active { background: var(--grad); border-color: transparent; color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 4px 0 var(--deep), 0 10px 18px -6px var(--glow); }
+.btn.primary:active, .fab:active { box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 1px 0 var(--deep); }
+input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 4px var(--glow); }
+.lock { background: var(--grad-hero); }
+
+/* Settings: rang chunne ke gol button */
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.swatch { width: 44px; height: 44px; border-radius: 14px; border: 3px solid transparent; cursor: pointer; position: relative;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 3px 0 rgba(0,0,0,.18), 0 6px 12px -6px rgba(0,0,0,.4); }
+.swatch.active { border-color: var(--text); }
+.swatch.active::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 18px; }

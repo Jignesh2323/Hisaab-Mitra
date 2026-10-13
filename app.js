@@ -80,10 +80,19 @@ function newSpaceCode() {
 
 
 // ---------- theme ----------
+// Theme ka rang (accent): Settings se chuna jata hai
+const ACCENTS = { indigo: ['Indigo', '#4F46E5', '#3730A3'], teal: ['Teal', '#0D9488', '#115E59'], rose: ['Rose', '#E11D48', '#9F1239'],
+  orange: ['Orange', '#EA580C', '#9A3412'], green: ['Green', '#16A34A', '#166534'], purple: ['Purple', '#9333EA', '#6B21A8'] };
+function applyAccent(a) {
+  if (!ACCENTS[a]) a = 'indigo';
+  document.documentElement.dataset.accent = a;
+  document.querySelector('meta[name=theme-color]').content = ACCENTS[a][2];
+}
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
-  document.querySelector('meta[name=theme-color]').content = t === 'dark' ? '#1e1b4b' : '#5b4cf0';
+  document.querySelector('meta[name=theme-color]').content = t === 'dark' ? '#0F1020' : (ACCENTS[document.documentElement.dataset.accent] || ACCENTS.indigo)[2];
 }
+applyAccent(store.get('hm_accent', 'indigo'));
 applyTheme(store.get('hm_theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 $('#backBtn').onclick = () => goHome();
 
@@ -1448,6 +1457,8 @@ async function openSettings() {
        <p class="muted small" style="margin-top:6px">Fingerprint / Face lock ke liye pehle PIN set karo. Fingerprint na chale to PIN kaam aayega.</p>`}
     <div class="bold" style="margin-top:16px">🎨 Theme</div>
     <div class="seg" style="margin-top:6px"><button class="btn ${!dark ? 'primary' : ''}" data-th="light">☀️ Light</button><button class="btn ${dark ? 'primary' : ''}" data-th="dark">🌙 Dark</button></div>
+    <div class="bold" style="margin-top:16px">🎨 Theme ka rang</div>
+    <div class="swatches">${Object.entries(ACCENTS).map(([k, [n, c, d]]) => `<button class="swatch ${(document.documentElement.dataset.accent || 'indigo') === k ? 'active' : ''}" data-accent="${k}" title="${n}" aria-label="${n}" style="background:linear-gradient(135deg, ${d}, ${c})"></button>`).join('')}</div>
     <div class="bold" style="margin-top:16px">🌐 Language / भाषा / ભાષા</div>
     <div class="seg" style="margin-top:6px">${Object.entries(LANGS).map(([k, l]) => `<button class="btn ${LANG === k ? 'primary' : ''}" data-lang="${k}" data-notr>${l}</button>`).join('')}</div>
     <div class="bold" style="margin-top:16px">🗑️ Delete history</div>
@@ -1459,6 +1470,9 @@ async function openSettings() {
     <input type="file" id="restoreFile" accept=".json,application/json" hidden>
     <div class="actions"><button class="btn block" onclick="closeModal()">Band karo</button></div>`);
   const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
+  $('#sheet').querySelectorAll('[data-accent]').forEach(b => b.onclick = () => {
+    store.set('hm_accent', b.dataset.accent); applyAccent(b.dataset.accent); applyTheme(document.documentElement.dataset.theme); openSettings();
+  });
   $('#sheet').querySelectorAll('[data-lang]').forEach(b => b.onclick = () => {
     if (b.dataset.lang === LANG) return;
     store.set('hm_lang', b.dataset.lang); location.reload();

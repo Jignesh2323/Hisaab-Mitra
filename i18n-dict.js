@@ -382,4 +382,5 @@ const I18N_DICT = [
   ['(khaali chhodo to naam se apne aap)', '(leave empty to auto-pick from name)', '(खाली छोड़ें तो नाम से अपने आप)', '(ખાલી રાખો તો નામથી આપોઆપ)'],
   ['Icon', 'Icon', 'आइकन', 'આઇકન'],
   ['collection', 'collection', 'कलेक्शन', 'કલેક્શન'],
+  ['Theme ka rang', 'Theme color', 'थीम का रंग', 'થીમનો રંગ'],
 ];
