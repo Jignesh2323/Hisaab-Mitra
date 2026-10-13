@@ -87,7 +87,22 @@ $('#backBtn').onclick = () => goHome();
 function openModal(html) { $('#sheet').innerHTML = html; $('#modal').classList.remove('hidden'); }
 function closeModal() { $('#modal').classList.add('hidden'); $('#sheet').innerHTML = ''; }
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
-function confirmBox(msg) { return Promise.resolve(confirm(msg)); }
+function confirmBox(msg, { ok = 'Haan, delete karo', icon = '🗑️', danger = true } = {}) {
+  return new Promise(resolve => {
+    const el = document.createElement('div');
+    el.className = 'pop';
+    el.innerHTML = `<div class="pop-box">
+      <div class="pop-icon ${danger ? 'danger' : ''}">${icon}</div>
+      <p>${esc(msg)}</p>
+      <div class="actions"><button class="btn" data-a="no">Nahi</button><button class="btn ${danger ? 'btn-danger' : 'primary'}" data-a="yes">${ok}</button></div>
+    </div>`;
+    const done = v => { el.remove(); resolve(v); };
+    el.onclick = e => { if (e.target === el) done(false); };
+    el.querySelector('[data-a="no"]').onclick = () => done(false);
+    el.querySelector('[data-a="yes"]').onclick = () => done(true);
+    document.body.appendChild(el);
+  });
+}
 
 // ---------- data load ----------
 async function loadProgram(code) {
@@ -252,6 +267,60 @@ const isGroup = p => p.type === 'friends' || p.type === 'trip';
 const isTrip = p => p.type === 'trip';
 const TYPE_LABEL = { flat: '🏢 Society / Flat', friends: '👥 Friends', trip: '🧳 Trip' };
 
+// ---------- delete history ----------
+async function logDeleted(kind, prog, { title, amount, data }) {
+  const space = prog.space || SPACE;
+  if (!space) return;
+  const c = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { 'x-hm-space': space } }, auth: { persistSession: false, autoRefreshToken: false, storageKey: 'hm-log' } });
+  check(await c.from('hm_deleted').insert({ space, kind, program_code: prog.code, program_name: prog.name, title: title || '', amount: num(amount), data }));
+}
+
+async function openHistory() {
+  openModal('<h2>🗑️ Delete history</h2><div class="loading">Load ho raha hai…</div>');
+  let rows;
+  try { rows = check(await db('ALL').from('hm_deleted').select('*').order('deleted_at', { ascending: false }).limit(200)); }
+  catch (e) { return openModal(`<h2>🗑️ Delete history</h2><p class="red">${esc(e.message)}</p><div class="actions"><button class="btn block" onclick="closeModal()">Band karo</button></div>`); }
+  const icon = { program: '📁', member: '🏠', expense: '🧾' }, what = { program: 'Program', member: 'Flat / member', expense: 'Kharcha' };
+  const when = d => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  openModal(`<h2>🗑️ Delete history</h2>
+    <p class="muted">"<span data-notr>${esc(spaces.name())}</span>" space me delete hui entries. <b>Wapas lao</b> se dobara aa jayegi.</p>
+    ${rows.length ? `<div class="list" style="margin-top:10px">${rows.map(r => `<div class="item" style="cursor:default">
+      <div class="badge">${icon[r.kind]}</div>
+      <div class="grow"><div class="bold ellipsis" data-notr>${esc(r.title)}</div>
+        <div class="muted ellipsis">${what[r.kind]}${r.kind !== 'program' ? ` · <span data-notr>${esc(r.program_name)}</span>` : ''} · ${when(r.deleted_at)}</div></div>
+      <div style="text-align:right"><div class="amt">${rs(r.amount)}</div><button class="btn sm" data-undel="${r.id}" style="margin-top:4px">↩️ Wapas lao</button></div>
+    </div>`).join('')}</div>` : '<div class="empty">Abhi tak kuchh delete nahi hua 👍</div>'}
+    <div class="actions"><button class="btn block" onclick="closeModal()">Band karo</button></div>`);
+  $('#sheet').querySelectorAll('[data-undel]').forEach(b => b.onclick = () => undelete(rows.find(r => r.id === b.dataset.undel)));
+}
+
+// Delete hui entry wapas lao (program poora naye code ke saath, flat/kharcha usi program me)
+async function undelete(r) {
+  try {
+    if (r.kind === 'program') {
+      closeModal();
+      await restoreBackup(new Blob([JSON.stringify({ app: 'HisaabMitra', ...r.data })]), true);
+    } else {
+      const c = db(r.program_code);
+      const prog = check(await c.from('hm_programs').select('id').eq('code', r.program_code).maybeSingle());
+      if (!prog) return toast('Wo program hi delete ho chuka hai. Pehle program wapas lao.');
+      const { id, created_at, ...row } = r.data;
+      if (r.kind === 'member') check(await c.from('hm_members').insert({ ...row, program_id: prog.id }));
+      else {
+        if (row.paid_by) {
+          const ok = check(await c.from('hm_members').select('id').eq('id', row.paid_by).maybeSingle());
+          if (!ok) row.paid_by = null;
+        }
+        check(await c.from('hm_expenses').insert({ ...row, program_id: prog.id }));
+      }
+      toast('Wapas aa gaya');
+      if (state.code === r.program_code) refresh();
+    }
+    check(await db('ALL').from('hm_deleted').delete().eq('id', r.id));
+    if (r.kind !== 'program') openHistory();
+  } catch (e) { toast('Wapas nahi aaya: ' + e.message); }
+}
+
 // Pehli baar: space banao ya link se judo
 function renderSpaceSetup() {
   $('#title').textContent = 'HisaabMitra';
@@ -316,7 +385,7 @@ function spaceMenu() {
   });
   on('spJoin2', () => { const v = prompt('Space ka link ya code paste karo'); if (v) joinSpace(v); });
   on('spRemove', async () => {
-    if (!await confirmBox(`"${spaces.name()}" is phone se hatega. Data online rahega, link se dobara jud sakte ho. Pakka?`)) return;
+    if (!await confirmBox(`"${spaces.name()}" is phone se hatega. Data online rahega, link se dobara jud sakte ho. Pakka?`, { ok: 'Haan, hatao' })) return;
     const rest = spaces.list().filter(x => x.code !== SPACE);
     store.set('hm_spaces', rest); store.set('hm_space', rest[0]?.code || ''); location.reload();
   });
@@ -438,7 +507,7 @@ function renderProgram() {
   state.programs = null;
   const d = state.data, p = d.program, c = calc(d);
   $('#title').textContent = p.name;
-  const tabs = [['summary', '📊 Summary'], ['members', p.type === 'flat' ? '🏢 Flats' : '👥 Members'], ['expenses', '🧾 Kharcha'], ['hisaab', '🤝 Hisaab']];
+  const tabs = [['summary', '📊', 'Summary'], ['members', p.type === 'flat' ? '🏢' : '👥', p.type === 'flat' ? 'Flats' : 'Members'], ['expenses', '🧾', 'Kharcha'], ['hisaab', '🤝', 'Hisaab']];
   let body = '';
   if (state.tab === 'summary') body = summaryView(d, c);
   if (state.tab === 'members') body = membersView(d, c);
@@ -446,7 +515,7 @@ function renderProgram() {
   if (state.tab === 'hisaab') body = hisaabView(d, c);
   const fab = state.tab === 'members' ? `＋ ${p.type === 'flat' ? 'Flat' : 'Member'} add` : state.tab === 'expenses' ? '＋ Kharcha add' : '';
   app.innerHTML = `
-    <div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${state.tab === k ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
+    <nav class="tabs">${tabs.map(([k, i, l]) => `<button class="tab ${state.tab === k ? 'active' : ''}" data-tab="${k}"><span class="ti">${i}</span><span>${l}</span></button>`).join('')}</nav>
     ${body}
     ${fab ? `<button class="fab" id="fab">${fab}</button>` : ''}`;
   app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { state.tab = b.dataset.tab; state.q = ''; state.filter = 'all'; state.ev = ''; saveRoute(false); renderProgram(); });
@@ -795,7 +864,10 @@ function bindProgram() {
   });
   on('delProg', async () => {
     if (!await confirmBox(`"${p.name}" ka poora data (members, kharcha) sabke liye hamesha ke liye delete ho jayega. Pakka?`)) return;
-    try { check(await db(p.code).from('hm_programs').delete().eq('id', p.id)); forgetProgram(p.code); toast('Delete ho gaya'); goHome(); }
+    try {
+      await logDeleted('program', state.data.program, { title: p.name, amount: calc(state.data).collected, data: { program: state.data.program, members: state.data.members, expenses: state.data.expenses } });
+      check(await db(p.code).from('hm_programs').delete().eq('id', p.id)); forgetProgram(p.code); toast('Delete ho gaya (history me hai)'); goHome();
+    }
     catch (e) { toast('Error: ' + e.message); }
   });
   on('pdfBtn', exportPdf);
@@ -832,7 +904,10 @@ function memberForm(m) {
   });
   on('mDel', async () => {
     if (!await confirmBox('Ise delete karein? Iske kiye kharche "Fund se" me chale jayenge.')) return;
-    try { check(await db(p.code).from('hm_members').delete().eq('id', m.id)); closeModal(); toast('Delete ho gaya'); refresh(); }
+    try {
+      await logDeleted('member', p, { title: memberLabel(p, m), amount: num(m.paid), data: m });
+      check(await db(p.code).from('hm_members').delete().eq('id', m.id)); closeModal(); toast('Delete ho gaya (history me hai)'); refresh();
+    }
     catch (e) { toast('Error: ' + e.message); }
   });
   $('#mSave').onclick = async () => {
@@ -1018,7 +1093,10 @@ function expenseForm(e) {
   if (!e) $('#eAmt').focus();
   if (e) $('#eDel').onclick = async () => {
     if (!await confirmBox('Ye kharcha delete karein?')) return;
-    try { check(await db(p.code).from('hm_expenses').delete().eq('id', e.id)); closeModal(); toast('Delete ho gaya'); refresh(); }
+    try {
+      await logDeleted('expense', p, { title: e.title, amount: num(e.amount), data: e });
+      check(await db(p.code).from('hm_expenses').delete().eq('id', e.id)); closeModal(); toast('Delete ho gaya (history me hai)'); refresh();
+    }
     catch (err) { toast('Error: ' + err.message); }
   };
   $('#eSave').onclick = async () => {
@@ -1129,7 +1207,7 @@ function backup() {
 }
 
 // Restore hamesha naye share code ke saath ek nayi copy banata hai
-async function restoreBackup(file) {
+async function restoreBackup(file, fromHistory) {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
@@ -1137,7 +1215,7 @@ async function restoreBackup(file) {
     const code = newCode(), c = db(code);
     if (!SPACE) throw new Error('Pehle space banao');
     const prog = check(await c.from('hm_programs').insert({
-      code, name: data.program.name + ' (restore)', type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), is_private: !!data.program.is_private, space: SPACE,
+      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), is_private: !!data.program.is_private, space: SPACE,
     }).select().single());
     const idMap = {};
     for (const m of data.members || []) {
@@ -1222,6 +1300,9 @@ async function openSettings() {
     <div class="seg" style="margin-top:6px"><button class="btn ${!dark ? 'primary' : ''}" data-th="light">☀️ Light</button><button class="btn ${dark ? 'primary' : ''}" data-th="dark">🌙 Dark</button></div>
     <div class="bold" style="margin-top:16px">🌐 Language / भाषा / ભાષા</div>
     <div class="seg" style="margin-top:6px">${Object.entries(LANGS).map(([k, l]) => `<button class="btn ${LANG === k ? 'primary' : ''}" data-lang="${k}" data-notr>${l}</button>`).join('')}</div>
+    <div class="bold" style="margin-top:16px">🗑️ Delete history</div>
+    <p class="muted" style="margin:4px 0 8px">Is space me jo bhi delete hua, uski list. Wahan se wapas bhi la sakte ho.</p>
+    <button class="btn block" id="sHistory">🗑️ Delete history dekho</button>
     <div class="bold" style="margin-top:16px">💾 Backup restore</div>
     <p class="muted" style="margin:4px 0 8px">Kisi program ki backup file (.json) se uski nayi copy banao. Backup program ke Summary me 💾 Backup se milta hai.</p>
     <button class="btn block" id="sRestore">📂 Backup file chuno</button>
@@ -1233,6 +1314,7 @@ async function openSettings() {
     store.set('hm_lang', b.dataset.lang); location.reload();
   });
   on('sRestore', () => $('#restoreFile').click());
+  on('sHistory', openHistory);
   $('#restoreFile').onchange = e => { closeModal(); restoreBackup(e.target.files[0]); };
   $('#sheet').querySelectorAll('[data-th]').forEach(b => b.onclick = () => { store.set('hm_theme', b.dataset.th); applyTheme(b.dataset.th); openSettings(); });
   const setNew = async () => {
