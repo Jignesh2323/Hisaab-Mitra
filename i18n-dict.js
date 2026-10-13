@@ -376,4 +376,6 @@ const I18N_DICT = [
   [' members', ' members', ' सदस्य', ' સભ્યો'],
   [' flats · ', ' flats · ', ' फ्लैट · ', ' ફ્લેટ · '],
   ['Sirf jinke paas link hai unhe dikhta hai.', 'Visible only to people with the link.', 'सिर्फ जिनके पास लिंक है उन्हें दिखता है।', 'ફક્ત જેની પાસે લિંક છે તેને દેખાય છે.'],
+  ['Har din ki tareekh (optional)', 'Date of each day (optional)', 'हर दिन की तारीख (वैकल्पिक)', 'દરેક દિવસની તારીખ (વૈકલ્પિક)'],
+  ['Date daaloge to kharcha daalte waqt aaj ke hisaab se sahi din apne aap chuna aayega.', 'With dates, the right day is auto-selected for new expenses based on today.', 'तारीख डालेंगे तो खर्च डालते समय आज के हिसाब से सही दिन अपने आप चुना आएगा।', 'તારીખ નાખશો તો ખર્ચ નાખતી વખતે આજના હિસાબે સાચો દિવસ આપોઆપ પસંદ થશે.'],
 ];

@@ -414,6 +414,15 @@ function spaceMenu() {
 const daysOf = p => Math.max(1, parseInt(p.days) || 1);
 const dayNames = p => Array.from({ length: daysOf(p) > 1 ? daysOf(p) : 0 }, (_, i) => `Din ${i + 1}`);
 // Purane program jinme pehle se "Din 1" jaisa kharcha hai, wo bhi kai din wale maane jayenge
+// Aaj ki tareekh se din: jis din ki date aaj ya aage pehli hai wahi. Sab nikal gaye to aakhri din.
+const dayDates = p => Array.isArray(p.day_dates) ? p.day_dates : [];
+function dayForToday(p, t = today()) {
+  const names = dayNames(p), dd = dayDates(p);
+  if (!names.length || !dd.some(Boolean)) return null;
+  for (let i = 0; i < names.length; i++) if (dd[i] && dd[i] >= t) return names[i];
+  let last = null; names.forEach((n, i) => { if (dd[i]) last = n; });
+  return last;
+}
 const multiDay = p => daysOf(p) > 1 || (p.id && state.data?.program?.id === p.id && state.data.expenses.some(e => (e.event || '').trim()));
 
 // New / edit program
@@ -428,7 +437,10 @@ function programForm(existing) {
     <label>Ye collection kitne program ka hai?</label>
     <div class="seg"><button class="btn ${!multiDay(p) ? 'primary' : ''}" data-d="1">🎯 Ek program</button><button class="btn ${multiDay(p) ? 'primary' : ''}" data-d="many">📅 Kai din ka</button></div>
     <div id="pDaysBox" class="${multiDay(p) ? '' : 'hidden'}"><label>Kitne din / program?</label>
-      <input type="number" id="pDays" inputmode="numeric" min="2" max="31" step="1" value="${daysOf(p) > 1 ? daysOf(p) : 4}"></div>
+      <input type="number" id="pDays" inputmode="numeric" min="2" max="31" step="1" value="${daysOf(p) > 1 ? daysOf(p) : 4}">
+      <label>Har din ki tareekh (optional)</label>
+      <p class="muted small" style="margin:0 0 6px">Date daaloge to kharcha daalte waqt aaj ke hisaab se sahi din apne aap chuna aayega.</p>
+      <div id="pDayDates" style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center"></div></div>
     <label class="row" style="gap:8px;color:var(--text);margin-top:14px"><input type="checkbox" id="pPrivate" ${p.is_private ?? (p.type === 'trip') ? 'checked' : ''} style="width:20px;height:20px">
       🔒 Private: sirf link walon ko dikhe</label>
     <label class="row" style="gap:8px;color:var(--text);margin-top:10px"><input type="checkbox" id="pCollect" ${p.collect_only ? 'checked' : ''} style="width:20px;height:20px">
@@ -441,6 +453,14 @@ function programForm(existing) {
       <select id="pCopy"><option value="">— Copy mat karo —</option>${others.map(o => `<option value="${esc(o.code)}">${esc(o.name)}</option>`).join('')}</select>` : ''}
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="pSave">${existing ? 'Save' : 'Banao'}</button></div>`);
   let type = p.type, many = multiDay(p);
+  const drawDates = () => {
+    const n = Math.min(31, Math.max(2, parseInt($('#pDays').value) || 2)), old = [...$('#sheet').querySelectorAll('[data-dd]')].map(i => i.value);
+    const saved = dayDates(p);
+    $('#pDayDates').innerHTML = Array.from({ length: n }, (_, i) => `<span class="bold small">Din ${i + 1}</span>
+      <input type="date" data-dd="${i}" value="${old[i] ?? saved[i] ?? ''}">`).join('');
+  };
+  drawDates();
+  $('#pDays').oninput = drawDates;
   const hints = { flat: 'Flat-wise collection, floor-wise baaki, fund se kharcha.', friends: 'Jo dost kharidta hai uska naam likho, aakhir me sabse barabar hisaab.',
     trip: 'Couple / group wise: kitne log, kai round me collection, koi bhi kharcha daale, aakhir me hisaab.' };
   const hint = () => { $('#pTypeHint').textContent = hints[type] || ''; };
@@ -462,17 +482,18 @@ function programForm(existing) {
     if (!name) return toast('Program ka naam daalo');
     const fixed_amount = num($('#pFixed').value);
     const days = many ? Math.min(31, Math.max(2, parseInt($('#pDays').value) || 2)) : 1;
+    const day_dates = many ? [...$('#sheet').querySelectorAll('[data-dd]')].map(i => i.value || '') : [];
     const is_private = $('#pPrivate').checked;
     const collect_only = $('#pCollect').checked;
     $('#pSave').disabled = true;
     try {
       if (existing) {
-        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, is_private, collect_only }).eq('id', existing.id).select().single());
+        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, day_dates, is_private, collect_only }).eq('id', existing.id).select().single());
         saveMyProgram({ ...existing, name, type, is_private });
         closeModal(); toast('Save ho gaya'); refresh();
       } else {
         const code = newCode();
-        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, is_private, collect_only, space: SPACE }).select().single());
+        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, day_dates, is_private, collect_only, space: SPACE }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
           const srcProg = (state.programs || []).find(x => x.code === copyFrom);
@@ -1102,7 +1123,7 @@ function expenseForm(e) {
   openModal(`<h2>${e ? 'Kharcha edit' : 'Naya kharcha'}</h2>
     ${multiDay(p) ? (() => {
       const evs = [...new Set([...dayNames(p), ...d.expenses.map(x => (x.event || '').trim()).filter(Boolean)])];
-      const cur = e ? (e.event || '') : (state.lastEv && evs.includes(state.lastEv) ? state.lastEv : evs[0]);
+      const cur = e ? (e.event || '') : (dayForToday(p) || (state.lastEv && evs.includes(state.lastEv) ? state.lastEv : evs[0]));
       return `<label>Kis din / program ka</label>
         <div class="chips" style="margin-bottom:0">${evs.map(x => `<button type="button" class="chip ${x === cur ? 'active' : ''}" data-pick="${esc(x)}">${esc(x)}</button>`).join('')}</div>
         <input type="hidden" id="eEvent" value="${esc(cur)}">`;
@@ -1161,6 +1182,9 @@ function expenseForm(e) {
   };
   $('#sheet').querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
     $('#eEvent').value = b.dataset.pick;
+    // Us din ki date ho to Date bhi wahi (purani entry ke liye)
+    const di = dayNames(p).indexOf(b.dataset.pick), dd = dayDates(p)[di];
+    if (!e && dd) $('#eDate').value = dd > today() ? today() : dd;
     $('#sheet').querySelectorAll('[data-pick]').forEach(x => x.classList.toggle('active', x === b));
   });
   if (!e) $('#eAmt').focus();
@@ -1288,7 +1312,7 @@ async function restoreBackup(file, fromHistory) {
     const code = newCode(), c = db(code);
     if (!SPACE) throw new Error('Pehle space banao');
     const prog = check(await c.from('hm_programs').insert({
-      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), is_private: !!data.program.is_private, collect_only: !!data.program.collect_only, space: SPACE,
+      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), day_dates: dayDates(data.program), is_private: !!data.program.is_private, collect_only: !!data.program.collect_only, space: SPACE,
     }).select().single());
     const idMap = {};
     for (const m of data.members || []) {
