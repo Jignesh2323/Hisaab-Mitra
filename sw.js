@@ -1,5 +1,5 @@
-const CACHE = 'hisaabmitra-v33';
-const SHELL = ['./', './index.html', './style.css', './app.js', './i18n.js', './i18n-dict.js', './manifest.json', './icon-192.png', './icon-512.png'];
+const CACHE = 'hisaabmitra-v34';
+const SHELL = ['./', './index.html', './style.css', './app.js', './i18n.js', './i18n-dict.js', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './logo.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
