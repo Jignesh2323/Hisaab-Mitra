@@ -138,7 +138,15 @@ function calc(d) {
     if (debtors[i].amt < 0.01) i++;
     if (creditors[j].amt < 0.01) j++;
   }
-  return { n, persons, perPerson, collected, fundExp, personalExp, totalExp, balance, fixed, expected, pending, counts, rows, settlements };
+  // Program-wise (Din 1, Din 2...) kharcha, pehli entry ke kram me
+  const evMap = new Map();
+  [...expenses].reverse().forEach(e => {
+    const k = (e.event || '').trim() || 'Bina program';
+    evMap.set(k, (evMap.get(k) || 0) + num(e.amount));
+  });
+  const events = [...evMap].map(([name, total]) => ({ name, total, perPerson: persons ? total / persons : 0 }))
+    .sort((a, b) => (a.name === 'Bina program') - (b.name === 'Bina program') || a.name.localeCompare(b.name, 'en', { numeric: true }));
+  return { n, persons, events, perPerson, collected, fundExp, personalExp, totalExp, balance, fixed, expected, pending, counts, rows, settlements };
 }
 
 // ---------- HOME ----------
@@ -253,7 +261,7 @@ function renderProgram() {
     <div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${state.tab === k ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
     ${body}
     ${fab ? `<button class="fab" id="fab">${fab}</button>` : ''}`;
-  app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { state.tab = b.dataset.tab; state.q = ''; state.filter = 'all'; renderProgram(); });
+  app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { state.tab = b.dataset.tab; state.q = ''; state.filter = 'all'; state.ev = ''; renderProgram(); });
   if (fab) $('#fab').onclick = () => state.tab === 'members' ? memberForm() : expenseForm();
   bindProgram();
 }
@@ -280,6 +288,7 @@ function summaryView(d, c) {
       <div class="stat"><div class="label">Expected total</div><div class="value">${rs(c.expected)}</div></div>
       <div class="stat wide" style="background:transparent;border-color:var(--line)"><div class="label">⏳ Abhi baaki (pending)</div><div class="value amber">${rs(c.pending)}</div></div>` : ''}
     </div>
+    ${eventCard(c)}
     <div class="card">
       <div class="bold" style="margin-bottom:6px">Payment status</div>
       <div class="row between small"><span>✅ Pura diya</span><b>${c.counts.ok}</b></div>
@@ -374,21 +383,57 @@ function floorGroups(d, c, list, row) {
 function expensesView(d, c) {
   const p = d.program, q = state.q.toLowerCase();
   const byId = Object.fromEntries(d.members.map(m => [m.id, memberLabel(p, m)]));
-  const list = d.expenses.filter(e => !q || e.title.toLowerCase().includes(q) || (byId[e.paid_by] || '').toLowerCase().includes(q));
+  const evName = e => (e.event || '').trim() || 'Bina program';
+  const list = d.expenses.filter(e => (!state.ev || evName(e) === state.ev) &&
+    (!q || e.title.toLowerCase().includes(q) || evName(e).toLowerCase().includes(q) || (byId[e.paid_by] || '').toLowerCase().includes(q)));
   return `
     <div class="stats">
       <div class="stat"><div class="label">Total kharcha</div><div class="value">${rs(c.totalExp)}</div></div>
       <div class="stat"><div class="label">Bacha (collector)</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div></div>
     </div>
     <input type="search" class="search" id="q" placeholder="Kharcha search…" value="${esc(state.q)}">
-    ${list.length ? `<div class="list">${list.map(e => `
+    ${c.events.length > 1 || (c.events[0] && c.events[0].name !== 'Bina program') ? `<div class="chips">
+      <button class="chip ${!state.ev ? 'active' : ''}" data-ev="">Sab</button>
+      ${c.events.map(ev => `<button class="chip ${state.ev === ev.name ? 'active' : ''}" data-ev="${esc(ev.name)}">${esc(ev.name)}</button>`).join('')}
+    </div>` : ''}
+    ${list.length ? eventGroups(c, list, e => `
       <div class="item" data-eid="${e.id}">
         ${e.photo_url ? `<img class="thumb" src="${esc(e.photo_url)}" alt="" loading="lazy">` : `<div class="badge part">🧾</div>`}
         <div class="grow"><div class="bold ellipsis">${esc(e.title)}</div>
           <div class="muted ellipsis">${fmtDate(e.spent_on)} · ${e.paid_by ? 'Diya: ' + esc(byId[e.paid_by] || '?') : 'Fund se'}</div></div>
         <div class="amt">${rs(e.amount)}</div>
-      </div>`).join('')}</div>`
+      </div>`)
       : `<div class="card empty">${d.expenses.length ? 'Koi match nahi mila.' : 'Abhi koi kharcha nahi. Neeche ＋ dabao.'}</div>`}`;
+}
+
+// Summary me program-wise kharcha aur per member
+function eventCard(c) {
+  if (!c.events.length || (c.events.length === 1 && c.events[0].name === 'Bina program')) return '';
+  return `<div class="card">
+    <div class="bold" style="margin-bottom:8px">🎉 Program-wise kharcha</div>
+    <div class="row between muted small" style="margin-bottom:4px"><span class="grow">Program</span><span style="width:90px;text-align:right">Kharcha</span><span style="width:90px;text-align:right">Per member</span></div>
+    ${c.events.map(ev => `<div class="row between" style="padding:5px 0;border-top:1px solid var(--line)">
+      <span class="grow ellipsis">${esc(ev.name)}</span><b style="width:90px;text-align:right">${rs(ev.total)}</b><span style="width:90px;text-align:right">${rs(ev.perPerson)}</span></div>`).join('')}
+    <div class="row between bold" style="padding:6px 0 0;border-top:2px solid var(--line)">
+      <span class="grow">Total</span><span style="width:90px;text-align:right">${rs(c.totalExp)}</span><span style="width:90px;text-align:right">${rs(c.perPerson)}</span></div>
+    <div class="muted" style="margin-top:6px">Per member = program ka kharcha ÷ ${c.persons} members</div>
+  </div>`;
+}
+
+// Kharcha tab: har program ka alag box
+function eventGroups(c, list, row) {
+  const groups = new Map();
+  list.forEach(e => { const k = (e.event || '').trim() || 'Bina program'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); });
+  const order = c.events.map(ev => ev.name).filter(k => groups.has(k));
+  if (order.length === 1 && order[0] === 'Bina program') return `<div class="list">${list.map(row).join('')}</div>`;
+  return order.map(k => {
+    const ev = c.events.find(x => x.name === k);
+    return `<div class="floor">
+      <div class="floor-head"><div class="grow"><div class="bold">${esc(k)}</div><div class="muted">${groups.get(k).length} entry · Per member ${rs(ev.perPerson)}</div></div>
+        <div class="floor-status">${rs(ev.total)}</div></div>
+      <div class="list">${groups.get(k).map(row).join('')}</div>
+    </div>`;
+  }).join('');
 }
 
 function hisaabView(d, c) {
@@ -418,6 +463,7 @@ function bindProgram() {
   const q = $('#q');
   if (q) q.oninput = () => { state.q = q.value; renderProgram(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
   app.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { state.filter = b.dataset.f; renderProgram(); });
+  app.querySelectorAll('[data-ev]').forEach(b => b.onclick = () => { state.ev = b.dataset.ev; renderProgram(); });
   app.querySelectorAll('[data-mid]').forEach(el => el.onclick = () => memberForm(state.data.members.find(m => m.id === el.dataset.mid)));
   app.querySelectorAll('[data-eid]').forEach(el => el.onclick = () => expenseForm(state.data.expenses.find(e => e.id === el.dataset.eid)));
   const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
@@ -553,6 +599,9 @@ function bulkForm() {
 function expenseForm(e) {
   const d = state.data, p = d.program;
   openModal(`<h2>${e ? 'Kharcha edit' : 'Naya kharcha'}</h2>
+    <label>Kis program ka</label><input type="text" id="eEvent" list="evList" placeholder="Jaise Din 1, Din 2" value="${esc(e ? e.event : state.lastEv || '')}">
+    <datalist id="evList">${[...new Set(d.expenses.map(x => (x.event || '').trim()).filter(Boolean))].map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+    ${(() => { const evs = [...new Set(d.expenses.map(x => (x.event || '').trim()).filter(Boolean))]; return evs.length ? `<div class="chips" style="margin-top:6px">${evs.map(x => `<button type="button" class="chip" data-pick="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''; })()}
     <label>Kis cheez ka</label><input type="text" id="eTitle" placeholder="Jaise Tent, Prasad, Petrol" value="${esc(e?.title)}">
     <label>Amount (₹)</label><input type="number" id="eAmt" inputmode="decimal" min="0" value="${e ? num(e.amount) : ''}">
     <label>Date</label><input type="date" id="eDate" value="${e?.spent_on || today()}">
@@ -567,6 +616,7 @@ function expenseForm(e) {
       ${e ? `<button class="btn danger" id="eDel">Delete</button>` : `<button class="btn" onclick="closeModal()">Cancel</button>`}
       <button class="btn primary" id="eSave">Save</button>
     </div>`);
+  $('#sheet').querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { $('#eEvent').value = b.dataset.pick; });
   if (!e) $('#eTitle').focus();
   if (e) $('#eDel').onclick = async () => {
     if (!await confirmBox('Ye kharcha delete karein?')) return;
@@ -583,7 +633,9 @@ function expenseForm(e) {
       if ($('#eRmPhoto')?.checked) photo_url = null;
       const file = $('#ePhoto').files[0];
       if (file) { btn.textContent = 'Photo upload…'; photo_url = await uploadPhoto(p.code, file); }
-      const row = { title, amount, spent_on: $('#eDate').value || today(), paid_by: $('#ePaid').value || null, photo_url };
+      const event = $('#eEvent').value.trim();
+      state.lastEv = event;
+      const row = { title, amount, event, spent_on: $('#eDate').value || today(), paid_by: $('#ePaid').value || null, photo_url };
       const c = db(p.code);
       if (e) check(await c.from('hm_expenses').update(row).eq('id', e.id));
       else check(await c.from('hm_expenses').insert({ ...row, program_id: p.id }));
@@ -622,10 +674,11 @@ function reportTables() {
     ],
     members: [[p.type === 'flat' ? 'Flat' : 'Naam', 'Naam', 'Members', 'Diya (₹)', 'Status'],
       ...d.members.map(m => [m.flat_no || m.name, p.type === 'flat' ? m.name : '', people(m), num(m.paid), status[memberStatus(p, m)]])],
-    expenses: [['Date', 'Kharcha', 'Amount (₹)', 'Kisne diya', 'Bill photo'],
-      ...d.expenses.map(e => [e.spent_on, e.title, num(e.amount), e.paid_by ? byId[e.paid_by] || '' : 'Fund', e.photo_url || ''])],
+    expenses: [['Program', 'Date', 'Kharcha', 'Amount (₹)', 'Kisne diya', 'Bill photo'],
+      ...d.expenses.map(e => [(e.event || '').trim() || 'Bina program', e.spent_on, e.title, num(e.amount), e.paid_by ? byId[e.paid_by] || '' : 'Fund', e.photo_url || ''])],
     hisaab: [['Member', 'Log', 'Diya (₹)', 'Khud kharcha (₹)', 'Hissa (₹)', 'Lena(+)/Dena(−) (₹)'],
       ...c.rows.map(r => [r.label, r.people, num(r.paid), num(r.spent), num(r.share), num(r.net)])],
+    events: [['Program', 'Kharcha (₹)', 'Per member (₹)'], ...c.events.map(ev => [ev.name, num(ev.total), num(ev.perPerson)])],
     settle: [['Kaun', 'Kisko', 'Kitna (₹)'], ...c.settlements.map(s => [s.from, s.to, num(s.amt)])],
   };
 }
@@ -636,6 +689,7 @@ function exportPdf() {
   $('#printArea').innerHTML = `<h1>${esc(t.p.name)}</h1><div>HisaabMitra · ${new Date().toLocaleDateString('en-IN')}</div>
     <h2>Summary</h2><table><tbody>${t.summary.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(typeof v === 'number' && !['Total members', 'Total flats'].includes(k) ? rs(v) : v)}</td></tr>`).join('')}</tbody></table>
     <h2>Collection</h2>${table(t.members)}
+    ${t.events.length > 1 ? `<h2>Program-wise kharcha</h2>${table(t.events)}` : ''}
     <h2>Kharcha</h2>${table(t.expenses)}
     <h2>Har member ka hisaab</h2>${table(t.hisaab)}
     ${t.settle.length > 1 ? `<h2>Kaun kisko de</h2>${table(t.settle)}` : ''}`;
@@ -648,6 +702,7 @@ function exportExcel() {
   const t = reportTables(), wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Detail', 'Value'], ...t.summary]), 'Summary');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.members), 'Collection');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.events), 'Program-wise');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.expenses), 'Kharcha');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.hisaab), 'Hisaab');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.settle), 'Kaun kisko de');
@@ -682,7 +737,7 @@ async function restoreBackup(file) {
       idMap[m.id] = nm.id;
     }
     const ex = (data.expenses || []).map(e => ({
-      program_id: prog.id, title: e.title, amount: num(e.amount), spent_on: e.spent_on || today(),
+      program_id: prog.id, title: e.title, event: e.event || '', amount: num(e.amount), spent_on: e.spent_on || today(),
       paid_by: e.paid_by ? idMap[e.paid_by] || null : null, photo_url: e.photo_url || null,
     }));
     if (ex.length) check(await c.from('hm_expenses').insert(ex));
