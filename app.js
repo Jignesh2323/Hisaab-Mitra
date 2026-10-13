@@ -163,6 +163,7 @@ function renderHome() {
   const list = myPrograms().filter(p => !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q));
   app.innerHTML = `
     <div class="btns" style="margin-bottom:12px">
+      <button class="btn" id="joinBtn">🔑 Code se kholo</button>
       <button class="btn" id="restoreBtn">📂 Backup restore</button>
     </div>
     ${myPrograms().length ? `<input type="search" class="search" id="homeSearch" placeholder="Program search karo…" value="${esc(state.homeQ)}">` : ''}
@@ -173,15 +174,35 @@ function renderHome() {
           <div class="muted">${p.type === 'flat' ? 'Society / Flat' : 'Friends group'} · Code <span class="code">${esc(p.code)}</span></div></div>
         <div class="muted">›</div>
       </div>`).join('')}</div>`
-      : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Neeche ＋ dabake naya program banao.</p>`}</div>`}
+      : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Neeche ＋ dabake naya program banao.<br>Dusre phone/computer par bana program kholna hai to <b>🔑 Code se kholo</b> dabao.</p>`}</div>`}
     <input type="file" id="restoreFile" accept=".json,application/json" hidden>
     <button class="fab" id="newBtn">＋ Naya Program</button>`;
   app.querySelectorAll('.item').forEach(el => el.onclick = () => openProgram(el.dataset.code));
   $('#newBtn').onclick = () => programForm();
   $('#restoreBtn').onclick = () => $('#restoreFile').click();
+  $('#joinBtn').onclick = joinForm;
   $('#restoreFile').onchange = e => restoreBackup(e.target.files[0]);
   const hs = $('#homeSearch');
   if (hs) hs.oninput = () => { state.homeQ = hs.value; renderHome(); const n = $('#homeSearch'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+}
+
+// Dusre phone/computer par bana program share code se kholo
+function joinForm() {
+  openModal(`<h2>Code se program kholo</h2>
+    <p class="muted">Jahan program banaya tha, wahan <b>Summary</b> tab me upar 8 letter ka <b>Share code</b> dikhega. Wo yahan daalo.</p>
+    <label>Share code</label><input type="text" id="jCode" placeholder="Jaise AB7K9QXZ" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase">
+    <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="jGo">Kholo</button></div>`);
+  $('#jCode').focus();
+  $('#jGo').onclick = async () => {
+    const code = $('#jCode').value.replace(/\s+/g, '').toUpperCase();
+    if (code.length < 6) return toast('Poora code daalo');
+    $('#jGo').disabled = true;
+    try {
+      const d = await loadProgram(code);
+      if (!d) { $('#jGo').disabled = false; return toast('Is code ka koi program nahi mila. Code dobara check karo.'); }
+      saveMyProgram(d.program); closeModal(); toast('Program khul gaya'); openProgram(code, d);
+    } catch (e) { $('#jGo').disabled = false; toast('Error: ' + e.message); }
+  };
 }
 
 // Collection kitne din/program ka hai. 1 = ek hi program (program-wise hisaab chhupa rahega)
@@ -510,7 +531,7 @@ function bindProgram() {
   on('copyCode', async () => { try { await navigator.clipboard.writeText(p.code); toast('Code copy ho gaya'); } catch { toast('Code: ' + p.code); } });
   on('editProg', () => programForm(p));
   on('forgetProg', async () => {
-    if (!await confirmBox('Program sirf is phone ki list se hatega. Online data delete nahi hoga, lekin ye program dobara list me nahi aayega. Pakka?')) return;
+    if (!await confirmBox('Program sirf is phone ki list se hatega. Online data rahega, share code se dobara khol sakte ho. Pakka?')) return;
     forgetProgram(p.code); goHome();
   });
   on('delProg', async () => {
