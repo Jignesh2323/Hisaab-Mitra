@@ -52,9 +52,11 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 const myPrograms = () => store.get('hm_programs', []);
-function saveMyProgram(p) {
+function saveMyProgram(p, joined) {
+  const old = myPrograms().find(x => x.code === p.code);
+  joined = joined || old?.joined;
   const list = myPrograms().filter(x => x.code !== p.code);
-  list.unshift({ code: p.code, name: p.name, type: p.type, private: !!p.is_private, space: p.space || SPACE });
+  list.unshift({ code: p.code, name: p.name, type: p.type, private: !!p.is_private, joined: !!joined, space: joined ? (old?.space || SPACE) : (p.space || SPACE) });
   store.set('hm_programs', list);
 }
 const forgetProgram = code => store.set('hm_programs', myPrograms().filter(x => x.code !== code));
@@ -267,7 +269,7 @@ async function loadPrograms() {
   const cols = 'id,code,name,type,days,created_at,is_private,collect_only,icon,hm_members(people,paid)';
   const pub = check(await db('ALL').from('hm_programs').select(cols).eq('space', SPACE).order('created_at', { ascending: false }));
   // Private program sirf unke code se milte hain jo is phone ne isi space me link se khole the
-  const mine = myPrograms().filter(x => x.private && (x.space || SPACE) === SPACE && !pub.some(p => p.code === x.code));
+  const mine = myPrograms().filter(x => (x.private || x.joined) && (x.space || SPACE) === SPACE && !pub.some(p => p.code === x.code));
   const priv = (await Promise.all(mine.map(x => db(x.code).from('hm_programs').select(cols).eq('code', x.code).maybeSingle()
     .then(r => { if (!r.error && !r.data) forgetProgram(x.code); return r.data; }).catch(() => null)))).filter(Boolean);
   state.programs = [...priv, ...pub].sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -287,6 +289,7 @@ function renderHome() {
         <div><b>${all.filter(x => x.type === 'trip').length}</b>Trips</div>
         <div><b>${all.filter(x => x.type === 'flat').length}</b>Society</div></div>
     </div>
+    <button class="btn block" id="joinCode" style="margin-bottom:10px">🔑 Code se program kholo</button>
     ${all.length ? `<input type="search" class="search" id="homeSearch" placeholder="Program search karo…" value="${esc(state.homeQ)}">` : ''}
     ${list.length ? `<div class="prog-cards">${list.map(p => {
       const L = progLook(p), ms = p.hm_members || [];
@@ -308,6 +311,7 @@ function renderHome() {
   app.querySelectorAll('.prog-card').forEach(el => el.onclick = () => openProgram(el.dataset.code));
   $('#newBtn').onclick = () => programForm();
   $('#spaceBtn').onclick = spaceMenu;
+  $('#joinCode').onclick = joinByCode;
   const hs = $('#homeSearch');
   if (hs) hs.oninput = () => { state.homeQ = hs.value; renderHome(); const n = $('#homeSearch'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
 }
@@ -371,6 +375,25 @@ async function undelete(r) {
   } catch (e) { toast('Wapas nahi aaya: ' + e.message); }
 }
 
+// Program ka 8 akshar ka code daal ke program kholo (kisi bhi space ka)
+function joinByCode() {
+  openModal(`<h2>🔑 Code se program kholo</h2>
+    <p class="muted">Jisne program banaya hai, usse program ka code maango. Program ke Summary me neeche "🔑 Program code" me milta hai.</p>
+    <label>Program code</label><input type="text" id="jcCode" placeholder="Jaise AB7K9QXZ" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase;letter-spacing:3px;font-weight:700">
+    <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="jcGo">Kholo</button></div>`);
+  $('#jcCode').focus();
+  $('#jcGo').onclick = async () => {
+    const code = $('#jcCode').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (code.length < 6) return toast('Poora code daalo');
+    $('#jcGo').disabled = true;
+    try {
+      const d = await loadProgram(code);
+      if (!d) { $('#jcGo').disabled = false; return toast('Is code ka koi program nahi mila. Code check karo.'); }
+      saveMyProgram(d.program, true); closeModal(); state.programs = null; toast('Program jud gaya ✅'); openProgram(code, d);
+    } catch (e) { $('#jcGo').disabled = false; toast('Error: ' + e.message); }
+  };
+}
+
 // Pehli baar: space banao ya link se judo
 function renderSpaceSetup() {
   $('#title').innerHTML = BRAND;
@@ -387,7 +410,13 @@ function renderSpaceSetup() {
       <p class="muted">Kisi ne space ka link bheja ho to use yahan paste karo, ya seedha link kholo.</p>
       <input type="text" id="spJoin" placeholder="Link ya space code">
       <button class="btn block" id="spGo" style="margin-top:10px">Join karo</button>
+    </div>
+    <div class="card">
+      <div class="bold">🔑 Sirf ek program ka code hai?</div>
+      <p class="muted">Program code (8 akshar) se seedha wo program khol sakte ho.</p>
+      <button class="btn block" id="spCode">🔑 Code se program kholo</button>
     </div>`;
+  $('#spCode').onclick = () => { spaces.use(newSpaceCode(), 'Mera space'); history.replaceState(null, '', location.pathname + '#join'); location.reload(); };
   $('#spNew').onclick = () => { spaces.use(newSpaceCode(), $('#spName').value.trim() || 'Mera space'); location.reload(); };
   $('#spGo').onclick = () => joinSpace($('#spJoin').value);
 }
@@ -688,6 +717,10 @@ function summaryView(d, c) {
     </div>` : ''}
     <div class="card">
       <div class="bold" style="margin-bottom:8px">⚙️ Program settings</div>
+      <div class="row between" style="margin-bottom:10px;padding:8px 10px;border:1px dashed var(--line);border-radius:12px">
+        <div><div class="muted">🔑 Program code (dusre isse khol sakte hain)</div><div class="code" style="font-size:20px">${esc(p.code)}</div></div>
+        <div class="btns"><button class="btn sm" data-copycode="${esc(p.code)}">📋 Copy</button><button class="btn sm primary" data-sharecode="${esc(p.code)}">📤 Share</button></div>
+      </div>
       <div class="btns">
         <button class="btn sm" id="editProg">✏️ Program edit</button>
         ${delProgBtn(p)}
@@ -831,6 +864,10 @@ function collectSummary(d, c) {
     </div>` : ''}
     <div class="card">
       <div class="bold" style="margin-bottom:8px">⚙️ Program settings</div>
+      <div class="row between" style="margin-bottom:10px;padding:8px 10px;border:1px dashed var(--line);border-radius:12px">
+        <div><div class="muted">🔑 Program code (dusre isse khol sakte hain)</div><div class="code" style="font-size:20px">${esc(p.code)}</div></div>
+        <div class="btns"><button class="btn sm" data-copycode="${esc(p.code)}">📋 Copy</button><button class="btn sm primary" data-sharecode="${esc(p.code)}">📤 Share</button></div>
+      </div>
       <div class="btns">
         <button class="btn sm" id="editProg">✏️ Program edit</button>
         ${delProgBtn(p)}
@@ -1009,6 +1046,14 @@ function bindProgram() {
   on('roundBtn2', roundForm);
   on('copyCode', async () => { try { await navigator.clipboard.writeText(p.code); toast('Code copy ho gaya'); } catch { toast('Code: ' + p.code); } });
   on('editProg', () => programForm(p));
+  app.querySelectorAll('[data-copycode]').forEach(b => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(p.code); toast('Code copy ho gaya'); } catch { prompt('Ye code copy karo:', p.code); }
+  });
+  app.querySelectorAll('[data-sharecode]').forEach(b => b.onclick = async () => {
+    const text = `HisaabMitra me "${p.name}" dekhne ke liye: app kholo → 🔑 Code se program kholo → code daalo: ${p.code}\n${location.origin}${location.pathname}`;
+    try { if (navigator.share) await navigator.share({ title: p.name, text }); else { await navigator.clipboard.writeText(text); toast('Message copy ho gaya, WhatsApp par bhej do'); } }
+    catch (e) { if (e.name !== 'AbortError') prompt('Ye copy karo:', text); }
+  });
   on('shareLink', async () => {
     const url = `${location.origin}${location.pathname}#p=${p.code}`;
     const text = `${p.name} ka hisaab HisaabMitra me dekho:`;
@@ -1616,6 +1661,7 @@ if (spaceFromLink) {
 } else startApp();
 
 function startApp() {
+  if (location.hash === '#join') { history.replaceState(null, '', location.pathname); goHome(); return joinByCode(); }
   const startRoute = readRoute();
   if (startRoute.code) openProgram(startRoute.code, null, startRoute.tab, true);
   else goHome();

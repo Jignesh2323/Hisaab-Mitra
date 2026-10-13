@@ -394,4 +394,13 @@ const I18N_DICT = [
   ['Dusre phone ka code daalo', 'Enter other phone\'s code', 'दूसरे फ़ोन का कोड डालें', 'બીજા ફોનનો કોડ નાખો'],
   ['Owner code copy ho gaya', 'Owner code copied', 'ओनर कोड कॉपी हो गया', 'ઓનર કોડ કૉપી થયો'],
   ['Total log', 'Total people', 'कुल लोग', 'કુલ લોકો'],
+  ['Code se program kholo', 'Open program with code', 'कोड से प्रोग्राम खोलें', 'કોડથી પ્રોગ્રામ ખોલો'],
+  ['Jisne program banaya hai, usse program ka code maango. Program ke Summary me neeche "🔑 Program code" me milta hai.', 'Ask the program creator for its code. It\'s at the bottom of the program\'s Summary under "🔑 Program code".', 'जिसने प्रोग्राम बनाया है उससे प्रोग्राम का कोड मांगें। प्रोग्राम के सारांश में नीचे "🔑 Program code" में मिलता है।', 'જેણે પ્રોગ્રામ બનાવ્યો છે તેની પાસેથી કોડ માંગો. પ્રોગ્રામના સારાંશમાં નીચે "🔑 Program code" માં મળે છે.'],
+  ['Program code (dusre isse khol sakte hain)', 'Program code (others can open with it)', 'प्रोग्राम कोड (दूसरे इससे खोल सकते हैं)', 'પ્રોગ્રામ કોડ (બીજા આનાથી ખોલી શકે)'],
+  ['Program code', 'Program code', 'प्रोग्राम कोड', 'પ્રોગ્રામ કોડ'],
+  ['Program jud gaya', 'Program added', 'प्रोग्राम जुड़ गया', 'પ્રોગ્રામ ઉમેરાયો'],
+  ['Is code ka koi program nahi mila. Code check karo.', 'No program found for this code. Check the code.', 'इस कोड का कोई प्रोग्राम नहीं मिला। कोड जांचें।', 'આ કોડનો કોઈ પ્રોગ્રામ ન મળ્યો. કોડ તપાસો.'],
+  ['Poora code daalo', 'Enter the full code', 'पूरा कोड डालें', 'આખો કોડ નાખો'],
+  ['Sirf ek program ka code hai?', 'Have just a program code?', 'सिर्फ एक प्रोग्राम का कोड है?', 'ફક્ત એક પ્રોગ્રામનો કોડ છે?'],
+  ['Program code (8 akshar) se seedha wo program khol sakte ho.', 'Open that program directly with its 8-letter code.', 'प्रोग्राम कोड (8 अक्षर) से सीधे वह प्रोग्राम खोल सकते हैं।', 'પ્રોગ્રામ કોડ (8 અક્ષર) થી સીધો તે પ્રોગ્રામ ખોલી શકો.'],
 ];
