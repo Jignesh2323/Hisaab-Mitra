@@ -645,8 +645,8 @@ function expenseForm(e) {
         <div class="chips" style="margin-bottom:0">${evs.map(x => `<button type="button" class="chip ${x === cur ? 'active' : ''}" data-pick="${esc(x)}">${esc(x)}</button>`).join('')}</div>
         <input type="hidden" id="eEvent" value="${esc(cur)}">`;
     })() : `<input type="hidden" id="eEvent" value="${esc(e?.event || '')}">`}
-    <label>Kis cheez ka</label><input type="text" id="eTitle" placeholder="Jaise Tent, Prasad, Petrol" value="${esc(e?.title)}">
     <label>Amount (₹)</label><input type="number" id="eAmt" inputmode="decimal" min="0" value="${e ? num(e.amount) : ''}">
+    <label>Kis cheez ka</label><input type="text" id="eTitle" placeholder="Jaise Tent, Prasad, Petrol" value="${esc(e?.title)}">
     <label>Date</label><input type="date" id="eDate" value="${e?.spent_on || today()}">
     <label>Paisa kisne diya</label>
     <select id="ePaid"><option value="">Collection fund se (collector ne)</option>
@@ -663,7 +663,7 @@ function expenseForm(e) {
     $('#eEvent').value = b.dataset.pick;
     $('#sheet').querySelectorAll('[data-pick]').forEach(x => x.classList.toggle('active', x === b));
   });
-  if (!e) $('#eTitle').focus();
+  if (!e) $('#eAmt').focus();
   if (e) $('#eDel').onclick = async () => {
     if (!await confirmBox('Ye kharcha delete karein?')) return;
     try { check(await db(p.code).from('hm_expenses').delete().eq('id', e.id)); closeModal(); toast('Delete ho gaya'); refresh(); }
