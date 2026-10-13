@@ -322,16 +322,53 @@ function membersView(d, c) {
       <button class="chip ${state.filter === 'pending' ? 'active' : ''}" data-f="pending">❌ Pending (${c.counts.no + c.counts.part})</button>
       <button class="chip" id="bulkBtn">＋ Ek saath add</button>
     </div>
-    ${list.length ? `<div class="list">${list.map(m => {
-      const st = memberStatus(p, m), due = c.fixed > 0 ? Math.max(0, c.fixed * people(m) - num(m.paid)) : 0;
-      const info = [p.type === 'flat' ? `👥 ${people(m)}` : '', due > 0 ? `${rs(due)} baaki` : ''].filter(Boolean).join(' · ');
-      return `<div class="item" data-mid="${m.id}">
-        <div class="badge ${st}">${icon[st]}</div>
-        <div class="grow"><div class="bold ellipsis">${esc(memberLabel(p, m))}</div>
-          ${info ? `<div class="muted">${info}</div>` : ''}</div>
-        <div class="amt ${st === 'ok' ? 'green' : ''}">${rs(m.paid)}</div>
-      </div>`; }).join('')}</div>`
+    ${list.length ? (p.type === 'flat' ? floorGroups(d, c, list, row) : `<div class="list">${list.map(row).join('')}</div>`)
       : `<div class="card empty">${d.members.length ? 'Koi match nahi mila.' : `Abhi koi ${p.type === 'flat' ? 'flat' : 'member'} nahi hai. Neeche ＋ dabao, ya "Ek saath add" se poori list daalo.`}</div>`}`;
+
+  function row(m) {
+    const st = memberStatus(p, m), due = c.fixed > 0 ? Math.max(0, c.fixed * people(m) - num(m.paid)) : 0;
+    const info = [p.type === 'flat' ? `👥 ${people(m)}` : '', due > 0 ? `${rs(due)} baaki` : ''].filter(Boolean).join(' · ');
+    return `<div class="item" data-mid="${m.id}">
+      <div class="badge ${st}">${icon[st]}</div>
+      <div class="grow"><div class="bold ellipsis">${esc(memberLabel(p, m))}</div>
+        ${info ? `<div class="muted">${info}</div>` : ''}</div>
+      <div class="amt ${st === 'ok' ? 'green' : ''}">${rs(m.paid)}</div>
+    </div>`;
+  }
+}
+
+// Flat number se floor: C-202 -> 2, C-1004 -> 10 (aakhri 2 digit flat ke, baaki floor)
+function floorOf(flat) {
+  const nums = String(flat || '').match(/\d+/g);
+  if (!nums) return null;
+  const n = nums[nums.length - 1];
+  return n.length >= 3 ? parseInt(n.slice(0, -2)) : null;
+}
+
+// Har floor ka alag box: upar floor ka hisaab (sab flats ka), neeche filter ke hisaab se flats
+function floorGroups(d, c, list, row) {
+  const p = d.program, groups = new Map();
+  d.members.forEach(m => {
+    const f = floorOf(m.flat_no);
+    if (!groups.has(f)) groups.set(f, { all: [], shown: [] });
+    groups.get(f).all.push(m);
+  });
+  list.forEach(m => groups.get(floorOf(m.flat_no)).shown.push(m));
+  const keys = [...groups.keys()].sort((a, b) => (a ?? 1e9) - (b ?? 1e9));
+  return keys.filter(k => groups.get(k).shown.length).map(k => {
+    const { all, shown } = groups.get(k);
+    const pendingFlats = all.filter(m => memberStatus(p, m) !== 'ok').length;
+    const due = c.fixed > 0 ? all.reduce((s, m) => s + Math.max(0, c.fixed * people(m) - num(m.paid)), 0) : 0;
+    const paid = all.reduce((s, m) => s + num(m.paid), 0);
+    return `<div class="floor">
+      <div class="floor-head">
+        <div class="grow"><div class="bold">${k === null ? 'Dusre flats' : `Floor ${k}`}</div>
+          <div class="muted">${all.length} flat${all.length > 1 ? 's' : ''} ·👥 ${all.reduce((s, m) => s + people(m), 0)} · Aaya ${rs(paid)}</div></div>
+        <div class="floor-status ${pendingFlats ? 'pending' : 'done'}">${pendingFlats ? `❌ ${pendingFlats} baaki${due > 0 ? `<br><span class="small">${rs(due)}</span>` : ''}` : '✅ Sab diya'}</div>
+      </div>
+      <div class="list">${shown.map(row).join('')}</div>
+    </div>`;
+  }).join('');
 }
 
 function expensesView(d, c) {

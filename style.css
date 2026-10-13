@@ -96,3 +96,10 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px
   #printArea th, #printArea td { border: 1px solid #999; padding: 4px 6px; text-align: left; }
   #printArea h1 { font-size: 18px; margin: 0 0 4px; } #printArea h2 { font-size: 14px; margin: 12px 0 6px; }
 }
+
+.floor { margin-bottom: 14px; }
+.floor-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--primary-soft); border: 1px solid var(--line); border-bottom: 0; border-radius: 14px 14px 0 0; }
+.floor .list { border-radius: 0 0 14px 14px; }
+.floor-status { text-align: right; font-weight: 600; font-size: 14px; white-space: nowrap; }
+.floor-status.pending { color: var(--red); }
+.floor-status.done { color: var(--green); }
