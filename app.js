@@ -295,14 +295,13 @@ function renderHome() {
         <div class="prog-icon" style="background:${L.grad}">${L.icon}</div>
         <div class="grow">
           <div class="prog-name" data-notr>${esc(p.name)}</div>
-          <div class="prog-tags">
-            ${p.collect_only ? '<span class="tag t-collect">💵 Sirf collection</span>' : `<span class="tag">${TYPE_LABEL[p.type] || ''}</span>`}
-            ${daysOf(p) > 1 ? `<span class="tag">📅 ${daysOf(p)} din</span>` : ''}
-            ${p.is_private ? '<span class="tag">🔒 Private</span>' : ''}
+          <div class="prog-line">
+            ${p.collect_only ? '<span class="tag t-collect">💵 Collection</span>' : daysOf(p) > 1 ? `<span class="tag">📅 ${daysOf(p)} din</span>` : `<span class="tag">${TYPE_LABEL[p.type] || ''}</span>`}
+            ${p.is_private ? '<span class="tag">🔒</span>' : ''}
+            <span class="muted">${p.type === 'flat' ? `🏢 ${ms.length} · ` : ''}👥 ${ppl}</span>
           </div>
-          <div class="muted">${p.type === 'flat' ? `🏢 ${ms.length} flats · ` : ''}👥 ${ppl} members · ${fmtDT(new Date(p.created_at))}</div>
         </div>
-        <div class="prog-amt"><b>${rs(got)}</b><span class="muted">collection</span></div>
+        <div class="prog-amt"><b>${rs(got)}</b><span class="muted">${fmtDT(new Date(p.created_at))}</span></div>
       </div>`; }).join('')}</div>`
       : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Neeche ＋ dabake naya program banao.</p>`}</div>`}
     <button class="fab" id="newBtn">＋ Naya Program</button>`;

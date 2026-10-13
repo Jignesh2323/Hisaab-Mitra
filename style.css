@@ -502,3 +502,14 @@ label { font-size: 13px; }
   background: rgba(255,255,255,.14); border-radius: 10px; padding: 5px 4px; }
 .home-hero .hero-num > div { display: flex; align-items: baseline; gap: 5px; }
 .home-hero .hero-num b { display: inline; font-size: 16px; }
+
+/* ---- Home program cards compact (padhne layak) ---- */
+.prog-cards { gap: 8px; }
+.prog-card { padding: 10px 12px; gap: 10px; border-radius: 14px; border-left-width: 4px; }
+.prog-card::after { display: none; }
+.prog-icon { width: 42px; height: 42px; border-radius: 13px; font-size: 22px; }
+.prog-name { font-size: 15.5px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.prog-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.prog-line .muted { font-size: 12.5px; }
+.prog-amt b { font-size: 15px; }
+.prog-amt .muted { font-size: 11px; margin-top: 2px; }
