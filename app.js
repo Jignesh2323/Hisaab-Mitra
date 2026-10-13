@@ -155,54 +155,43 @@ function goHome(fromHistory) {
   if (!fromHistory) saveRoute(false);
   $('#title').textContent = 'HisaabMitra';
   $('#backBtn').classList.add('hidden');
-  renderHome();
+  if (!state.programs) app.innerHTML = '<div class="loading">Load ho raha hai…</div>';
+  else renderHome();
+  loadPrograms().then(() => { if (state.view === 'home') renderHome(); })
+    .catch(e => { if (state.view === 'home' && !state.programs) app.innerHTML = `<div class="card empty">Programs load nahi hue. Internet check karo.<br><span class="small">${esc(e.message)}</span><br><br><button class="btn primary" onclick="goHome()">Dobara try karo</button></div>`; });
+}
+
+// Sabhi programs (sabko dikhte hain), naye pehle
+async function loadPrograms() {
+  state.programs = check(await db('ALL').from('hm_programs').select('id,code,name,type,days,created_at').order('created_at', { ascending: false }));
+  return state.programs;
 }
 
 function renderHome() {
   const q = state.homeQ.toLowerCase();
-  const list = myPrograms().filter(p => !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q));
+  const all = state.programs || [];
+  const list = all.filter(p => !q || p.name.toLowerCase().includes(q));
   app.innerHTML = `
     <div class="btns" style="margin-bottom:12px">
-      <button class="btn" id="joinBtn">🔑 Code se kholo</button>
       <button class="btn" id="restoreBtn">📂 Backup restore</button>
     </div>
-    ${myPrograms().length ? `<input type="search" class="search" id="homeSearch" placeholder="Program search karo…" value="${esc(state.homeQ)}">` : ''}
+    ${all.length ? `<input type="search" class="search" id="homeSearch" placeholder="Program search karo…" value="${esc(state.homeQ)}">` : ''}
     ${list.length ? `<div class="list">${list.map(p => `
       <div class="item" data-code="${esc(p.code)}">
         <div class="badge ok">${p.type === 'flat' ? '🏢' : '👥'}</div>
         <div class="grow"><div class="bold ellipsis">${esc(p.name)}</div>
-          <div class="muted">${p.type === 'flat' ? 'Society / Flat' : 'Friends group'} · Code <span class="code">${esc(p.code)}</span></div></div>
+          <div class="muted">${p.type === 'flat' ? 'Society / Flat' : 'Friends group'}${daysOf(p) > 1 ? ` · ${daysOf(p)} din` : ''} · ${new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div></div>
         <div class="muted">›</div>
       </div>`).join('')}</div>`
-      : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Neeche ＋ dabake naya program banao.<br>Dusre phone/computer par bana program kholna hai to <b>🔑 Code se kholo</b> dabao.</p>`}</div>`}
+      : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Neeche ＋ dabake naya program banao.</p>`}</div>`}
     <input type="file" id="restoreFile" accept=".json,application/json" hidden>
     <button class="fab" id="newBtn">＋ Naya Program</button>`;
   app.querySelectorAll('.item').forEach(el => el.onclick = () => openProgram(el.dataset.code));
   $('#newBtn').onclick = () => programForm();
   $('#restoreBtn').onclick = () => $('#restoreFile').click();
-  $('#joinBtn').onclick = joinForm;
   $('#restoreFile').onchange = e => restoreBackup(e.target.files[0]);
   const hs = $('#homeSearch');
   if (hs) hs.oninput = () => { state.homeQ = hs.value; renderHome(); const n = $('#homeSearch'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
-}
-
-// Dusre phone/computer par bana program share code se kholo
-function joinForm() {
-  openModal(`<h2>Code se program kholo</h2>
-    <p class="muted">Jahan program banaya tha, wahan <b>Summary</b> tab me upar 8 letter ka <b>Share code</b> dikhega. Wo yahan daalo.</p>
-    <label>Share code</label><input type="text" id="jCode" placeholder="Jaise AB7K9QXZ" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase">
-    <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="jGo">Kholo</button></div>`);
-  $('#jCode').focus();
-  $('#jGo').onclick = async () => {
-    const code = $('#jCode').value.replace(/\s+/g, '').toUpperCase();
-    if (code.length < 6) return toast('Poora code daalo');
-    $('#jGo').disabled = true;
-    try {
-      const d = await loadProgram(code);
-      if (!d) { $('#jGo').disabled = false; return toast('Is code ka koi program nahi mila. Code dobara check karo.'); }
-      saveMyProgram(d.program); closeModal(); toast('Program khul gaya'); openProgram(code, d);
-    } catch (e) { $('#jGo').disabled = false; toast('Error: ' + e.message); }
-  };
 }
 
 // Collection kitne din/program ka hai. 1 = ek hi program (program-wise hisaab chhupa rahega)
@@ -213,7 +202,7 @@ const multiDay = p => daysOf(p) > 1 || (p.id && state.data?.program?.id === p.id
 
 // New / edit program
 function programForm(existing) {
-  const others = myPrograms().filter(p => !existing || p.code !== existing.code);
+  const others = (state.programs || []).filter(p => !existing || p.code !== existing.code);
   const p = existing || { name: '', type: 'flat', fixed_amount: 0, days: 1 };
   openModal(`<h2>${existing ? 'Program edit karo' : 'Naya Program'}</h2>
     <label>Program ka naam</label><input type="text" id="pName" placeholder="Jaise Ganpati Utsav 2026" value="${esc(p.name)}">
@@ -292,7 +281,7 @@ async function openProgram(code, preloaded, tab = 'summary', fromHistory) {
   try {
     const d = preloaded || await loadProgram(code);
     if (!d) {
-      if (await confirmBox('Ye program ab nahi mila (shayad delete ho gaya). Apni list se hata dein?')) forgetProgram(code);
+      toast('Ye program nahi mila, shayad delete ho gaya');
       return goHome();
     }
     state.data = d; saveMyProgram(d.program); renderProgram();
@@ -306,6 +295,7 @@ async function refresh() {
 }
 
 function renderProgram() {
+  state.programs = null;
   const d = state.data, p = d.program, c = calc(d);
   $('#title').textContent = p.name;
   const tabs = [['summary', 'Summary'], ['members', p.type === 'flat' ? 'Flats' : 'Members'], ['expenses', 'Kharcha'], ['hisaab', 'Hisaab']];
@@ -327,10 +317,6 @@ function renderProgram() {
 function summaryView(d, c) {
   const p = d.program, unit = p.type === 'flat' ? 'flat' : 'member';
   return `
-    <div class="card row between">
-      <div><div class="muted">Share code (dusron ko do)</div><div class="code" style="font-size:20px">${esc(p.code)}</div></div>
-      <button class="btn sm" id="copyCode">📋 Copy</button>
-    </div>
     <div class="stats">
       <div class="stat wide"><div class="label">💰 Collector ke paas bacha paisa</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div>
         <div class="muted">${c.balance < 0 ? 'Collection se zyada kharcha ho gaya' : 'Collection − fund se hua kharcha'}</div></div>
@@ -366,7 +352,6 @@ function summaryView(d, c) {
       <div class="bold" style="margin-bottom:8px">Settings</div>
       <div class="btns">
         <button class="btn sm" id="editProg">✏️ Program edit</button>
-        <button class="btn sm" id="forgetProg">📤 Meri list se hatao</button>
         <button class="btn sm danger" id="delProg">🗑️ Program delete</button>
       </div>
     </div>`;
@@ -733,7 +718,7 @@ function reportTables() {
   return {
     p, c,
     summary: [
-      ['Program', p.name], ['Type', p.type === 'flat' ? 'Society / Flat' : 'Friends'], ['Share code', p.code],
+      ['Program', p.name], ['Type', p.type === 'flat' ? 'Society / Flat' : 'Friends'],
       ...(p.type === 'flat' ? [['Total flats', c.n]] : []), ['Total members', c.persons], ['Total collection', num(c.collected)],
       ...(c.fixed > 0 ? [['Fixed amount / member', c.fixed], ['Expected total', num(c.expected)], ['Pending', num(c.pending)]] : []),
       ['Total kharcha', num(c.totalExp)], ['Fund se kharcha', num(c.fundExp)], ['Members ne khud kiya', num(c.personalExp)],
@@ -814,6 +799,6 @@ async function restoreBackup(file) {
 
 // ---------- start ----------
 const startRoute = readRoute();
-if (startRoute.code && myPrograms().some(x => x.code === startRoute.code)) openProgram(startRoute.code, null, startRoute.tab, true);
+if (startRoute.code) openProgram(startRoute.code, null, startRoute.tab, true);
 else goHome();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
