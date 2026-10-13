@@ -444,22 +444,46 @@ function memberForm(m) {
   };
 }
 
+// "C-202-2" jaisa likha ho to flat C-202 aur 2 member. Flat number me koi digit hona zaroori hai.
+const COMPACT = /^(.*\d.*?)\s*-\s*(\d{1,2})$/;
+
+function parseBulk(text, isFlat) {
+  const out = [];
+  for (const line of text.split('\n').map(l => l.trim()).filter(Boolean)) {
+    const parts = line.split(',').map(x => x.trim()).filter(Boolean);
+    if (!isFlat) { parts.forEach(n => out.push({ name: n, flat_no: '', people: 1 })); continue; }
+    // Ek line me comma se kai flats: "C-202-2, C-402-3, ..."
+    if (parts.length > 1 && parts.every(x => COMPACT.test(x))) {
+      parts.forEach(x => { const [, flat, n] = x.match(COMPACT); out.push({ flat_no: flat, name: '', people: Math.max(1, +n) }); });
+      continue;
+    }
+    // Ek line me ek flat: "A-101, Patel, 4" ya "A-101, 4" ya "C-202-2"
+    let count = 1;
+    if (parts.length > 1 && /^\d+$/.test(parts[parts.length - 1])) count = Math.max(1, parseInt(parts.pop()));
+    let [flat, ...rest] = parts;
+    if (count === 1 && rest.length === 0 && COMPACT.test(flat)) { const m = flat.match(COMPACT); flat = m[1]; count = Math.max(1, +m[2]); }
+    out.push({ flat_no: flat, name: rest.join(', '), people: count });
+  }
+  return out;
+}
+
 function bulkForm() {
   const p = state.data.program, isFlat = p.type === 'flat';
   openModal(`<h2>Ek saath add karo</h2>
-    <p class="muted">Har line me ek ${isFlat ? 'flat. Format: <b>Flat, Naam, Kitne member</b>, jaise <b>A-101, Sharma ji, 4</b>. Naam na ho to <b>A-102, 3</b> bhi chalega' : 'member ka naam'}.</p>
-    <textarea id="bulk" rows="9" placeholder="${isFlat ? 'A-101, Sharma ji, 4\nA-102, 3\nA-103, Patel, 2' : 'Rahul\nAmit\nPriya'}"></textarea>
+    <p class="muted">${isFlat ? 'Har line me ek flat: <b>Flat, Naam, Kitne member</b>, jaise <b>A-101, Sharma ji, 4</b>.<br>Ya ek hi line me comma se: <b>C-202-2, C-402-3, C-602-4</b> (aakhri number = members).' : 'Har line me ek naam, ya comma se alag karke.'}</p>
+    <textarea id="bulk" rows="8" placeholder="${isFlat ? 'C-202-2, C-402-3, C-602-4\nya\nA-101, Sharma ji, 4' : 'Rahul\nAmit\nPriya'}"></textarea>
+    <div id="bPrev" class="muted" style="margin-top:8px"></div>
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="bSave">Add karo</button></div>`);
+  const preview = () => {
+    const rows = parseBulk($('#bulk').value, isFlat);
+    if (!rows.length) return $('#bPrev').innerHTML = '';
+    const total = rows.reduce((s, r) => s + r.people, 0);
+    $('#bPrev').innerHTML = `<b>${rows.length} ${isFlat ? 'flats' : 'members'}${isFlat ? `, ${total} members` : ''}</b> add honge:<br>` +
+      rows.map(r => esc(isFlat ? `${r.flat_no}${r.name ? ' (' + r.name + ')' : ''} 👥${r.people}` : r.name)).join(' · ');
+  };
+  $('#bulk').oninput = preview;
   $('#bSave').onclick = async () => {
-    const rows = $('#bulk').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
-      if (!isFlat) return { program_id: p.id, name: l, flat_no: '', paid: 0 };
-      // "A-101, Patel, 4" -> flat, naam, members. Aakhri hissa number ho to wo members ki ginti hai
-      const parts = l.split(',').map(x => x.trim());
-      let count = 1;
-      if (parts.length > 1 && /^\d+$/.test(parts[parts.length - 1])) count = Math.max(1, parseInt(parts.pop()));
-      const [flat, ...rest] = parts;
-      return { program_id: p.id, flat_no: flat, name: rest.join(', '), people: count, paid: 0 };
-    });
+    const rows = parseBulk($('#bulk').value, isFlat).map(r => ({ ...r, program_id: p.id, paid: 0 }));
     if (!rows.length) return toast('Kuchh likho');
     $('#bSave').disabled = true;
     try { check(await db(p.code).from('hm_members').insert(rows)); closeModal(); toast(`${rows.length} add ho gaye`); refresh(); }
