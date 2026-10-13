@@ -269,7 +269,7 @@ function goHome(fromHistory) {
 // Sabhi programs (sabko dikhte hain), naye pehle
 async function loadPrograms() {
   // hm_members(people): har program ke flat/member aur log ginne ke liye
-  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,icon,owner_hash,hm_members(people,paid)';
+  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,icon,owner_hash,track_pass,pass_label,hm_members(people,paid,passes)';
   const pub = check(await db('ALL').from('hm_programs').select(cols).eq('space', SPACE).order('created_at', { ascending: false }));
   // Private program sirf unke code se milte hain jo is phone ne isi space me link se khole the
   const mine = myPrograms().filter(x => (x.private || x.joined) && (x.space || SPACE) === SPACE && !pub.some(p => p.code === x.code));
@@ -304,6 +304,7 @@ function renderHome() {
           <div class="prog-line">
             ${p.collect_only ? '<span class="tag t-collect">💵 Collection</span>' : daysOf(p) > 1 ? `<span class="tag">📅 ${daysOf(p)} din</span>` : `<span class="tag">${TYPE_LABEL[p.type] || ''}</span>`}
             ${p.is_private ? '<span class="tag">🔒</span>' : ''}
+            ${p.track_pass ? (() => { const g = ms.reduce((t, m) => t + Math.min(passes(m), people(m)), 0); return `<span class="tag ${g >= ppl ? 't-collect' : 't-pass'}">🎟️ ${esc(passName(p))} ${g}/${ppl}</span>`; })() : ''}
             <span class="muted">${p.type === 'flat' ? `🏢 ${ms.length} · ` : ''}👥 ${ppl}</span>
           </div>
         </div>
@@ -510,6 +511,11 @@ function dayLabel(p, name) {
   const i = dayNames(p).indexOf(name), d = i >= 0 ? dayDates(p)[i] : '';
   return d ? `${name} · ${fmtDM(d)}` : name;
 }
+// Pass / cheez vitran
+const passOn = p => !!p?.track_pass;
+const passName = p => (p?.pass_label || 'Pass').trim() || 'Pass';
+const passes = m => Math.max(0, parseInt(m.passes) || 0);
+const passDue = m => Math.max(0, people(m) - passes(m));
 const multiDay = p => daysOf(p) > 1 || (p.id && state.data?.program?.id === p.id && state.data.expenses.some(e => (e.event || '').trim()));
 
 // Program ki pehchan: icon aur rang (naam ke shabdon se apne aap)
@@ -558,6 +564,10 @@ function programForm(existing) {
       🔒 Private: sirf link walon ko dikhe</label>
     <label class="row" style="gap:8px;color:var(--text);margin-top:10px"><input type="checkbox" id="pCollect" ${p.collect_only ? 'checked' : ''} style="width:20px;height:20px">
       💵 Sirf collection (kharcha / hisaab nahi)</label>
+    <label class="row" style="gap:8px;color:var(--text);margin-top:10px"><input type="checkbox" id="pPass" ${p.track_pass ? 'checked' : ''} style="width:20px;height:20px">
+      🎟️ Pass / cheez dena track karo</label>
+    <div id="pPassBox" class="${p.track_pass ? '' : 'hidden'}"><label>Kya dena hai? (naam)</label>
+      <input type="text" id="pPassName" placeholder="Jaise Pass, Coupon, Kit" value="${esc(p.pass_label || 'Pass')}"></div>
     <p class="muted small" style="margin:2px 0 0">Paisa jama karke society ya kisi aur ko dena ho. Bas kisne kitna diya aur kul kitna aaya, wahi dikhega.</p>
     <p class="muted small" style="margin:2px 0 0">Private program kisi ki list me nahi aata. Summary se link bhejo, jo kholega usi ko dikhega.</p>
     <label>Fixed amount har member (₹) <span class="muted">— nahi hai to 0 rakho</span></label>
@@ -565,6 +575,7 @@ function programForm(existing) {
     ${!existing && others.length ? `<label>Pichhle program se member list copy karo (optional)</label>
       <select id="pCopy"><option value="">— Copy mat karo —</option>${others.map(o => `<option value="${esc(o.code)}">${esc(o.name)}</option>`).join('')}</select>` : ''}
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="pSave">${existing ? 'Save' : 'Banao'}</button></div>`);
+  setTimeout(() => { const cb = $('#pPass'); if (cb) cb.onchange = () => $('#pPassBox').classList.toggle('hidden', !cb.checked); });
   let type = p.type, many = multiDay(p), icon = p.icon || '';
   $('#sheet').querySelectorAll('[data-icon]').forEach(b => b.onclick = () => {
     icon = b.dataset.icon;
@@ -602,15 +613,16 @@ function programForm(existing) {
     const day_dates = many ? [...$('#sheet').querySelectorAll('[data-dd]')].map(i => i.value || '') : [];
     const is_private = $('#pPrivate').checked;
     const collect_only = $('#pCollect').checked;
+    const track_pass = $('#pPass').checked, pass_label = ($('#pPassName').value || 'Pass').trim() || 'Pass';
     $('#pSave').disabled = true;
     try {
       if (existing) {
-        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, day_dates, is_private, collect_only, icon }).eq('id', existing.id).select().single());
+        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, day_dates, is_private, collect_only, icon, track_pass, pass_label }).eq('id', existing.id).select().single());
         saveMyProgram({ ...existing, name, type, is_private });
         closeModal(); toast('Save ho gaya'); refresh();
       } else {
         const code = newCode();
-        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, day_dates, is_private, collect_only, icon, space: SPACE, owner_hash: await myOwner() }).select().single());
+        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, day_dates, is_private, collect_only, icon, track_pass, pass_label, space: SPACE, owner_hash: await myOwner() }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
           const srcProg = (state.programs || []).find(x => x.code === copyFrom);
@@ -714,6 +726,7 @@ function summaryView(d, c) {
       ${c.fixed > 0 ? `
       <div class="stat wide" style="--g:linear-gradient(135deg,#f59e0b,#ef4444);--glow:rgba(239,68,68,.5)"><div class="label">⏳ Abhi baaki (pending)</div><div class="value amber">${rs(c.pending)}</div></div>` : ''}
     </div>
+    ${passCard(d)}
     ${owedCard(c)}
     ${depositCard(d, c)}
     ${eventCard(c)}
@@ -724,6 +737,7 @@ function summaryView(d, c) {
       <div class="row between small"><span>❌ Nahi diya</span><b>${c.counts.no}</b></div>
       ${c.personalExp > 0 ? `<div class="muted" style="margin-top:8px">Fund se kharcha ${rs(c.fundExp)} · Members ne khud kiya ${rs(c.personalExp)}</div>` : ''}
     </div>
+    ${d.program.collect_only ? passCard(d) : ''}
     <div class="card">
       <div class="bold" style="margin-bottom:8px">📤 Export / Backup</div>
       <div class="btns">
@@ -756,6 +770,7 @@ function membersView(d, c) {
     const st = memberStatus(p, m);
     if (state.filter === 'paid' && st !== 'ok') return false;
     if (state.filter === 'pending' && st === 'ok') return false;
+    if (state.filter === 'passdue' && !passDue(m)) return false;
     return !q || memberLabel(p, m).toLowerCase().includes(q);
   });
   const icon = { ok: '✅', part: '🟡', no: '❌' };
@@ -765,6 +780,7 @@ function membersView(d, c) {
       <button class="chip ${state.filter === 'all' ? 'active' : ''}" data-f="all">Sab (${c.n})</button>
       <button class="chip ${state.filter === 'paid' ? 'active' : ''}" data-f="paid">✅ Diya (${c.counts.ok})</button>
       <button class="chip ${state.filter === 'pending' ? 'active' : ''}" data-f="pending">❌ Pending (${c.counts.no + c.counts.part})</button>
+      ${passOn(p) ? `<button class="chip ${state.filter === 'passdue' ? 'active' : ''}" data-f="passdue">🎟️ ${esc(passName(p))} baaki (${d.members.filter(passDue).length})</button>` : ''}
       <button class="chip" id="bulkBtn">＋ Ek saath add</button>
       ${isGroup(p) && d.members.length ? '<button class="chip" id="roundBtn">💰 Collection lo</button>' : ''}
     </div>
@@ -773,7 +789,8 @@ function membersView(d, c) {
 
   function row(m) {
     const st = memberStatus(p, m), due = c.fixed > 0 ? Math.max(0, c.fixed * people(m) - num(m.paid)) : 0;
-    const info = [p.type === 'flat' ? faces(people(m)) : '', due > 0 ? `${rs(due)} baaki` : ''].filter(Boolean).join(' · ');
+    const info = [p.type === 'flat' ? faces(people(m)) : '', due > 0 ? `${rs(due)} baaki` : '',
+      passOn(p) ? `<span class="pass-badge ${passDue(m) ? 'due' : 'done'}">🎟️ ${passes(m)}/${people(m)}</span>` : ''].filter(Boolean).join(' · ');
     if (isGroup(p)) {
       const r = c.rows.find(x => x.id === m.id);
       return `<div class="item" data-mid="${m.id}">
@@ -854,6 +871,21 @@ function expensesView(d, c) {
 }
 
 // Sirf collection: kul jama, kitne flat/member ne diya, kitna baaki
+// Pass vitran ka hisaab
+function passCard(d) {
+  const p = d.program;
+  if (!passOn(p)) return '';
+  const total = d.members.reduce((s, m) => s + people(m), 0), given = d.members.reduce((s, m) => s + Math.min(passes(m), people(m)), 0);
+  const dueFlats = d.members.filter(passDue);
+  return `<div class="card">
+    <div class="bold">🎟️ ${esc(passName(p))} vitran</div>
+    <div class="row between"><span><b class="green">${given}</b> ko mila</span><span><b class="${total - given ? 'red' : 'green'}">${total - given}</b> baaki</span><span class="muted">kul ${total}</span></div>
+    <div class="pass-bar"><i style="width:${total ? Math.round(given * 100 / total) : 0}%"></i></div>
+    ${dueFlats.length ? `<div class="muted" style="margin-top:6px" data-notr>Baaki: ${dueFlats.slice(0, 12).map(m => esc(memberLabel(p, m)) + ` (${passDue(m)})`).join(', ')}${dueFlats.length > 12 ? ' …' : ''}</div>` : '<div class="green small" style="margin-top:6px">✅ Sabko mil gaya</div>'}
+    ${dueFlats.length ? `<div class="btns" style="margin-top:8px"><button class="btn sm" data-f-go="passdue">🎟️ Baaki wale dekho</button>${canEdit(p) ? '<button class="btn sm primary" id="passAll">✅ Sabko de diya</button>' : ''}</div>` : ''}
+  </div>`;
+}
+
 function collectSummary(d, c) {
   const p = d.program, flat = p.type === 'flat';
   const paidUnits = d.members.filter(m => num(m.paid) > 0);
@@ -871,6 +903,7 @@ function collectSummary(d, c) {
         c.fixed > 0 ? ['⏳ Baaki', rs(c.pending)] : null,
       ])}
     </div>
+    ${d.program.collect_only ? passCard(d) : ''}
     <div class="card">
       <div class="bold" style="margin-bottom:8px">📤 Export / Backup</div>
       <div class="btns">
@@ -1068,6 +1101,13 @@ function bindProgram() {
   on('roundBtn2', roundForm);
   on('copyCode', async () => { try { await navigator.clipboard.writeText(p.code); toast('Code copy ho gaya'); } catch { toast('Code: ' + p.code); } });
   on('editProg', () => programForm(p));
+  app.querySelectorAll('[data-f-go]').forEach(b => b.onclick = () => { state.tab = 'members'; state.filter = b.dataset.fGo; saveRoute(false); renderProgram(); });
+  on('passAll', async () => {
+    const due = state.data.members.filter(passDue);
+    if (!await confirmBox(`${due.length} flat/member ke sab logon ko ${passName(p)} de diya maan lein?`, { ok: 'Haan, de diya', icon: '🎟️', danger: false })) return;
+    try { await Promise.all(due.map(m => db(p.code).from('hm_members').update({ passes: people(m) }).eq('id', m.id).then(check))); toast('Sabko de diya ✅'); refresh(); }
+    catch (e) { toast('Error: ' + e.message); refresh(); }
+  });
   app.querySelectorAll('[data-copycode]').forEach(b => b.onclick = async () => {
     try { await navigator.clipboard.writeText(p.code); toast('Code copy ho gaya'); } catch { prompt('Ye code copy karo:', p.code); }
   });
@@ -1143,9 +1183,15 @@ function memberView(m) {
       <div class="row between"><span>Ab tak diya</span><b>${rs(m.paid)}</b></div>
       ${p.type === 'flat' || isTrip(p) ? `<div class="row between"><span>Members</span><b>${people(m)}</b></div>` : ''}
     </div>
+    ${passOn(p) ? `<div class="card" style="margin:0 0 8px;padding:10px"><div class="row between"><span>🎟️ ${esc(passName(p))}: <b>${passes(m)}/${people(m)}</b></span>
+      ${passDue(m) ? `<button class="btn sm primary" id="vPass">Baaki ${passDue(m)} de diye</button>` : '<span class="green small">✅ Sabko mila</span>'}</div></div>` : ''}
     <p class="muted">${OWNER_ONLY}</p>
     <label>＋ Aur payment jodo (₹)</label><input type="number" id="vAdd" inputmode="decimal" min="1" placeholder="Jaise 500">
     <div class="actions"><button class="btn" onclick="closeModal()">Band karo</button><button class="btn primary" id="vSave">Payment jodo</button></div>`);
+  if ($('#vPass')) $('#vPass').onclick = async () => {
+    try { check(await db(p.code).from('hm_members').update({ passes: people(m) }).eq('id', m.id)); closeModal(); toast('Pass de diya ✅'); refresh(); }
+    catch (e) { toast('Error: ' + e.message); }
+  };
   $('#vSave').onclick = async () => {
     const extra = num($('#vAdd').value);
     if (extra <= 0) return toast('Kitna diya, wo daalo');
@@ -1163,6 +1209,8 @@ function memberForm(m) {
     ${isFlat ? `<label>Flat number</label><input type="text" id="mFlat" placeholder="Jaise A-101" value="${esc(m?.flat_no)}">` : ''}
     <label>${isFlat ? 'Naam (optional)' : 'Naam'}</label><input type="text" id="mName" value="${esc(m?.name)}">
     ${isFlat || isTrip(p) ? `<label>${isFlat ? 'Kitne member (log)' : 'Kitne log (couple = 2)'}</label><input type="number" id="mPeople" inputmode="numeric" min="1" step="1" value="${m ? people(m) : 1}">` : ''}
+    ${passOn(p) ? `<label>🎟️ ${esc(passName(p))} kitne diye</label>
+      <div class="row"><input type="number" id="mPass" inputmode="numeric" min="0" step="1" value="${m ? passes(m) : 0}" style="flex:1"><button type="button" class="btn sm" id="mPassAll">Sabko</button></div>` : ''}
     <label>Kitna diya (₹)</label>
     <input type="number" id="mPaid" inputmode="decimal" ${isFlat ? 'min="0"' : ''} value="${m ? num(m.paid) || '' : ''}" placeholder="0">
     <div class="btns" style="margin-top:8px">
@@ -1178,6 +1226,7 @@ function memberForm(m) {
   const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
   on('mFull', () => $('#mPaid').value = num(fixed * ($('#mPeople') ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1)));
   on('mZero', () => $('#mPaid').value = 0);
+  on('mPassAll', () => $('#mPass').value = $('#mPeople') ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1);
   on('mAdd', () => {
     const extra = num(prompt('Kitna aur diya? (₹)'));
     if (extra) $('#mPaid').value = num(num($('#mPaid').value) + extra);
@@ -1193,6 +1242,7 @@ function memberForm(m) {
   $('#mSave').onclick = async () => {
     const row = { name: $('#mName').value.trim(), flat_no: isFlat ? $('#mFlat').value.trim() : '', paid: num($('#mPaid').value),
       people: isFlat || isTrip(p) ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1 };
+    if (passOn(p)) row.passes = Math.max(0, parseInt($('#mPass').value) || 0);
     if (!row.name && !row.flat_no) return toast(isFlat ? 'Flat number daalo' : 'Naam daalo');
     if (isFlat && row.flat_no && state.data.members.some(x => x.id !== m?.id && flatKey(x.flat_no) === flatKey(row.flat_no)))
       return toast(`Flat ${row.flat_no} is program me pehle se hai`);
@@ -1515,7 +1565,7 @@ async function restoreBackup(file, fromHistory) {
     const code = newCode(), c = db(code);
     if (!SPACE) throw new Error('Pehle space banao');
     const prog = check(await c.from('hm_programs').insert({
-      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), day_dates: dayDates(data.program), is_private: !!data.program.is_private, collect_only: !!data.program.collect_only, space: SPACE, owner_hash: await myOwner(),
+      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), day_dates: dayDates(data.program), is_private: !!data.program.is_private, collect_only: !!data.program.collect_only, track_pass: !!data.program.track_pass, pass_label: data.program.pass_label || 'Pass', space: SPACE, owner_hash: await myOwner(),
     }).select().single());
     const idMap = {};
     for (const m of data.members || []) {
