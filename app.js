@@ -404,7 +404,6 @@ function joinByCode() {
     <p class="muted">Jisne program banaya hai, usse program ka code maango. Program ke Summary me neeche "🔑 Program code" me milta hai.</p>
     <label>Program code</label><input type="text" id="jcCode" placeholder="Jaise AB7K9QXZ" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase;letter-spacing:3px;font-weight:700">
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="jcGo">Kholo</button></div>`);
-  $('#jcCode').focus();
   $('#jcGo').onclick = async () => {
     const code = $('#jcCode').value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     if (code.length < 6) return toast('Poora code daalo');
@@ -604,7 +603,6 @@ function programForm(existing) {
     hint();
     if (!existing) $('#pPrivate').checked = type === 'trip';
   });
-  if (!existing) $('#pName').focus();
   $('#pSave').onclick = async () => {
     const name = $('#pName').value.trim();
     if (!name) return toast('Program ka naam daalo');
@@ -1222,7 +1220,6 @@ function memberForm(m) {
       ${m ? `<button class="btn danger" id="mDel">Delete</button>` : `<button class="btn" onclick="closeModal()">Cancel</button>`}
       <button class="btn primary" id="mSave">Save</button>
     </div>`);
-  (isFlat ? $('#mFlat') : $('#mName')).focus();
   const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
   on('mFull', () => $('#mPaid').value = num(fixed * ($('#mPeople') ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1)));
   on('mZero', () => $('#mPaid').value = 0);
@@ -1302,7 +1299,7 @@ function roundForm() {
   const total = () => { $('#rTot').innerHTML = `Is round me kul: <b>${rs(ins.reduce((s, i) => s + num(i.value), 0))}</b>`; };
   const fill = () => { const v = num($('#rPer').value); ins.forEach(i => i.value = v ? num(v * +i.dataset.ppl) : ''); total(); };
   $('#rPer').oninput = fill; ins.forEach(i => i.oninput = total);
-  if (last) fill(); $('#rPer').focus();
+  if (last) fill();
   $('#rSave').onclick = async () => {
     const adds = ins.map(i => ({ m: d.members.find(x => x.id === i.dataset.rm), amt: num(i.value) })).filter(x => x.amt > 0);
     if (!adds.length) return toast('Kisi ka amount daalo');
@@ -1410,7 +1407,6 @@ function expenseForm(e) {
     who = b.dataset.who;
     $('#sheet').querySelectorAll('[data-who]').forEach(x => x.classList.toggle('primary', x === b));
     $('#ePayerBox').classList.toggle('hidden', who !== 'other');
-    if (who === 'other') $('#ePayer').focus();
   });
   if ($('#eBack')) $('#eBack').onclick = () => depositBack(e);
   if ($('#eUnback')) $('#eUnback').onclick = async () => {
@@ -1424,7 +1420,6 @@ function expenseForm(e) {
     if (!e && dd) $('#eDate').value = dd > today() ? today() : dd;
     $('#sheet').querySelectorAll('[data-pick]').forEach(x => x.classList.toggle('active', x === b));
   });
-  if (!e) $('#eAmt').focus();
   if (e) $('#eDel').onclick = async () => {
     if (!await confirmBox('Ye kharcha delete karein?')) return;
     try {
@@ -1626,7 +1621,6 @@ function askPin(title, hint) {
       <input type="password" id="pinIn" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="4 se 6 number" style="font-size:22px;letter-spacing:8px;text-align:center">
       <div class="actions"><button class="btn" id="pinNo">Cancel</button><button class="btn primary" id="pinOk">OK</button></div>`);
     const done = v => { closeModal(); resolve(v); };
-    $('#pinIn').focus();
     $('#pinNo').onclick = () => done(null);
     $('#pinOk').onclick = () => { const v = $('#pinIn').value.trim(); if (!/^\d{4,6}$/.test(v)) return toast('4 se 6 number ka PIN daalo'); done(v); };
     $('#pinIn').onkeydown = e => { if (e.key === 'Enter') $('#pinOk').click(); };
@@ -1736,12 +1730,12 @@ function showLock(force) {
   };
   const tryBio = async () => {
     try { await bioCheck(); unlock(); }
-    catch { $('#lkMsg').textContent = 'Fingerprint nahi chala, PIN daalo'; $('#lkPin').focus(); }
+    catch { $('#lkMsg').textContent = 'Fingerprint nahi chala, PIN daalo'; }
   };
   $('#lkGo').onclick = async () => { const v = $('#lkPin').value.trim(); if (await hashPin(v) === lock.pinHash) unlock(); else { $('#lkMsg').textContent = 'Galat PIN'; $('#lkPin').value = ''; $('#lkPin').focus(); } };
   $('#lkPin').oninput = () => { if ($('#lkPin').value.length >= 4) tryPin(); };
   $('#lkPin').onkeydown = e => { if (e.key === 'Enter') $('#lkGo').click(); };
-  if (lock.bioId) { $('#lkBio').onclick = tryBio; tryBio(); } else $('#lkPin').focus();
+  if (lock.bioId) { $('#lkBio').onclick = tryBio; tryBio(); }
 }
 // App 1 minute se zyada background me rahe to dobara lock
 document.addEventListener('visibilitychange', () => {
