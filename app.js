@@ -81,6 +81,9 @@ const sha256hex = async t => Array.from(new Uint8Array(await crypto.subtle.diges
 const myOwner = (() => { let h; return async () => h || (h = await sha256hex(OWNER_KEY)); })();
 let MY_OWNER = ''; myOwner().then(h => { MY_OWNER = h; if (state.view === 'program' && state.data) renderProgram(); });
 const isOwner = p => !!p.owner_hash && p.owner_hash === MY_OWNER;
+// Save hui entry badalna / delete: sirf owner (owner khaali ho to sab)
+const canEdit = (p = state.data?.program) => !!p && (!p.owner_hash || isOwner(p));
+const OWNER_ONLY = '🔒 Save hui entry sirf program ka owner badal ya delete kar sakta hai.';
 const spaceLink = code => `${location.origin}${location.pathname}#space=${code}`;
 function newSpaceCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -722,7 +725,7 @@ function summaryView(d, c) {
         <div class="btns"><button class="btn sm" data-copycode="${esc(p.code)}">📋 Copy</button><button class="btn sm primary" data-sharecode="${esc(p.code)}">📤 Share</button></div>
       </div>
       <div class="btns">
-        <button class="btn sm" id="editProg">✏️ Program edit</button>
+        ${canEdit(p) ? '<button class="btn sm" id="editProg">✏️ Program edit</button>' : ''}
         ${delProgBtn(p)}
       </div>
     </div>`;
@@ -869,7 +872,7 @@ function collectSummary(d, c) {
         <div class="btns"><button class="btn sm" data-copycode="${esc(p.code)}">📋 Copy</button><button class="btn sm primary" data-sharecode="${esc(p.code)}">📤 Share</button></div>
       </div>
       <div class="btns">
-        <button class="btn sm" id="editProg">✏️ Program edit</button>
+        ${canEdit(p) ? '<button class="btn sm" id="editProg">✏️ Program edit</button>' : ''}
         ${delProgBtn(p)}
       </div>
     </div>`;
@@ -884,7 +887,7 @@ function owedCard(c) {
     ${c.owedBy.map(o => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line);margin-top:6px">
       <div class="grow"><div class="ellipsis bold" data-notr>${esc(o.name)}</div>
         <div class="muted">${o.items} kharcha · kul ${rs(o.total)}${o.total - o.owed > 0.009 ? ` · diya ${rs(o.total - o.owed)}` : ''}</div></div>
-      ${o.owed > 0.009 ? `<b class="red" style="margin-right:8px">${rs(o.owed)}</b><button class="btn sm primary" data-repay="${esc(o.name)}">Paisa diya</button>`
+      ${o.owed > 0.009 ? `<b class="red" style="margin-right:8px">${rs(o.owed)}</b>${canEdit() ? `<button class="btn sm primary" data-repay="${esc(o.name)}">Paisa diya</button>` : ''}`
         : '<span class="green small">✅ Chukta</span>'}</div>`).join('')}
   </div>`;
 }
@@ -922,7 +925,7 @@ function depositCard(d, c) {
       ${open.length ? `<b class="amber">${rs(c.depPending)} wapas aana baaki</b>` : '<b class="green">✅ Sab wapas mil gaya</b>'}</div>
     ${open.map(e => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line);margin-top:6px">
       <div class="grow"><div class="ellipsis" data-notr>${esc(e.title)}</div><div class="muted">${(e.event || '').trim() ? esc(dayLabel(d.program, e.event)) + ' · ' : ''}${fmtDate(e.spent_on)}</div></div>
-      <b style="margin-right:8px">${rs(e.amount)}</b><button class="btn sm primary" data-depback="${e.id}">Mil gaya</button></div>`).join('')}
+      <b style="margin-right:8px">${rs(e.amount)}</b>${canEdit() ? `<button class="btn sm primary" data-depback="${e.id}">Mil gaya</button>` : ''}</div>`).join('')}
     ${c.depReturned || c.depLost ? `<div class="muted" style="margin-top:8px">Wapas mila ${rs(c.depReturned)}${c.depLost ? ` · Kata (kharche me juda) ${rs(c.depLost)}` : ''}</div>` : ''}
   </div>`;
 }
@@ -982,8 +985,8 @@ function friendsSettle(d, c) {
     ${c.rows.map(r => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line)">
       <div class="grow"><div class="bold ellipsis" data-notr>${esc(r.label)}</div>
         <div class="muted">${isTrip(state.data.program) ? `${faces(r.people)} · ` : ''}Kharcha ${rs(r.spent)} · Hissa ${rs(r.share)}${r.paid ? ` · ${r.paid > 0 ? 'Diya' : 'Wapas mila'} ${rs(Math.abs(r.paid))}` : ''}</div></div>
-      ${r.net < -0.009 ? `<b class="red" style="margin-right:8px">${rs(-r.net)} lena</b><button class="btn sm primary" data-settle="${r.id}">Le liya</button>`
-        : r.net > 0.009 ? `<b class="green" style="margin-right:8px">${rs(r.net)} dena</b><button class="btn sm primary" data-settle="${r.id}">De diya</button>`
+      ${r.net < -0.009 ? `<b class="red" style="margin-right:8px">${rs(-r.net)} lena</b>${canEdit() ? `<button class="btn sm primary" data-settle="${r.id}">Le liya</button>` : ''}`
+        : r.net > 0.009 ? `<b class="green" style="margin-right:8px">${rs(r.net)} dena</b>${canEdit() ? `<button class="btn sm primary" data-settle="${r.id}">De diya</button>` : ''}`
         : '<span class="green small">✅ Barabar</span>'}</div>`).join('')}
     <div class="muted" style="margin-top:8px">${left ? `${left} dost ka hisaab baaki · Abhi haath me ${rs(c.balance)}` : '🎉 Sabka hisaab ho gaya'}</div>
   </div>`;
@@ -1113,7 +1116,28 @@ function bigStatIcons() {
 }
 
 // ---------- member forms ----------
+// Owner nahi: save hua flat/member sirf dekh sakte hain, bas payment jod sakte hain
+function memberView(m) {
+  const p = state.data.program;
+  openModal(`<h2>${esc(memberLabel(p, m))}</h2>
+    <div class="card" style="margin:8px 0">
+      <div class="row between"><span>Ab tak diya</span><b>${rs(m.paid)}</b></div>
+      ${p.type === 'flat' || isTrip(p) ? `<div class="row between"><span>Members</span><b>${people(m)}</b></div>` : ''}
+    </div>
+    <p class="muted">${OWNER_ONLY}</p>
+    <label>＋ Aur payment jodo (₹)</label><input type="number" id="vAdd" inputmode="decimal" min="1" placeholder="Jaise 500">
+    <div class="actions"><button class="btn" onclick="closeModal()">Band karo</button><button class="btn primary" id="vSave">Payment jodo</button></div>`);
+  $('#vSave').onclick = async () => {
+    const extra = num($('#vAdd').value);
+    if (extra <= 0) return toast('Kitna diya, wo daalo');
+    $('#vSave').disabled = true;
+    try { check(await db(p.code).from('hm_members').update({ paid: num(num(m.paid) + extra) }).eq('id', m.id)); closeModal(); toast(`${rs(extra)} jud gaya`); refresh(); }
+    catch (e) { $('#vSave').disabled = false; toast('Error: ' + e.message); }
+  };
+}
+
 function memberForm(m) {
+  if (m && !canEdit()) return memberView(m);
   const p = state.data.program, isFlat = p.type === 'flat';
   const fixed = num(p.fixed_amount);
   openModal(`<h2>${m ? 'Edit' : 'Add'} ${isFlat ? 'flat' : 'member'}</h2>
@@ -1262,6 +1286,7 @@ function bulkForm() {
 
 // ---------- expense form ----------
 function expenseForm(e) {
+  if (e && !canEdit()) return expenseView(e);
   const d = state.data, p = d.program;
   openModal(`<h2>${e ? 'Kharcha edit' : 'Naya kharcha'}</h2>
     ${multiDay(p) ? (() => {
@@ -1366,6 +1391,22 @@ function expenseForm(e) {
       closeModal(); toast('Save ho gaya'); refresh();
     } catch (err) { btn.disabled = false; btn.textContent = 'Save'; toast('Error: ' + err.message); }
   };
+}
+
+// Owner nahi: save hua kharcha sirf dekh sakte hain
+function expenseView(e) {
+  const d = state.data, p = d.program, byId = Object.fromEntries(d.members.map(m => [m.id, memberLabel(p, m)]));
+  openModal(`<h2 data-notr>${esc(e.title)}</h2>
+    <div class="card" style="margin:8px 0">
+      <div class="row between"><span>Amount</span><b>${rs(e.amount)}</b></div>
+      ${(e.event || '').trim() ? `<div class="row between"><span>Din</span><b>${esc(dayLabel(p, e.event))}</b></div>` : ''}
+      <div class="row between"><span>Date</span><b>${fmtDate(e.spent_on)}</b></div>
+      <div class="row between"><span>Kisne diya</span><b data-notr>${esc(payer(e) || (e.paid_by ? byId[e.paid_by] || '' : 'Fund'))}</b></div>
+      ${isDep(e) ? `<div class="row between"><span>Deposit</span><b>${depBack(e) ? 'Wapas mila ' + rs(e.returned) : 'Wapas aana baaki'}</b></div>` : ''}
+    </div>
+    ${e.photo_url ? `<a href="${esc(e.photo_url)}" target="_blank" rel="noopener"><img src="${esc(e.photo_url)}" alt="Bill" style="max-width:100%;border-radius:12px"></a>` : ''}
+    <p class="muted">${OWNER_ONLY}</p>
+    <div class="actions"><button class="btn block" onclick="closeModal()">Band karo</button></div>`);
 }
 
 // Photo ko chhota karke upload karo (data aur storage bachane ke liye)

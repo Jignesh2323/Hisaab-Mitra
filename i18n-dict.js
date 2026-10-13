@@ -403,4 +403,10 @@ const I18N_DICT = [
   ['Poora code daalo', 'Enter the full code', 'पूरा कोड डालें', 'આખો કોડ નાખો'],
   ['Sirf ek program ka code hai?', 'Have just a program code?', 'सिर्फ एक प्रोग्राम का कोड है?', 'ફક્ત એક પ્રોગ્રામનો કોડ છે?'],
   ['Program code (8 akshar) se seedha wo program khol sakte ho.', 'Open that program directly with its 8-letter code.', 'प्रोग्राम कोड (8 अक्षर) से सीधे वह प्रोग्राम खोल सकते हैं।', 'પ્રોગ્રામ કોડ (8 અક્ષર) થી સીધો તે પ્રોગ્રામ ખોલી શકો.'],
+  ['Save hui entry sirf program ka owner badal ya delete kar sakta hai.', 'Only the program owner can edit or delete saved entries.', 'सेव हुई एंट्री सिर्फ प्रोग्राम का ओनर बदल या डिलीट कर सकता है।', 'સેવ થયેલી એન્ટ્રી ફક્ત પ્રોગ્રામનો ઓનર બદલી કે ડિલીટ કરી શકે.'],
+  ['Save hui entry sirf program ka owner badal sakta hai', 'Only the program owner can change saved entries', 'सेव हुई एंट्री सिर्फ प्रोग्राम का ओनर बदल सकता है', 'સેવ થયેલી એન્ટ્રી ફક્ત પ્રોગ્રામનો ઓનર બદલી શકે'],
+  ['Aur payment jodo (₹)', 'Add payment (₹)', 'और पेमेंट जोड़ें (₹)', 'વધુ પેમેન્ટ ઉમેરો (₹)'],
+  ['Payment jodo', 'Add payment', 'पेमेंट जोड़ें', 'પેમેન્ટ ઉમેરો'],
+  ['Kitna diya, wo daalo', 'Enter the amount paid', 'कितना दिया, वह डालें', 'કેટલા આપ્યા તે નાખો'],
+  ['Ab tak diya', 'Paid so far', 'अब तक दिया', 'અત્યાર સુધી આપ્યા'],
 ];
