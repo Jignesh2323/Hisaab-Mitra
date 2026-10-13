@@ -235,3 +235,4 @@ label { display: block; font-size: 13px; font-weight: 500; color: var(--muted); 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 .faces { letter-spacing: -3px; font-size: 15px; }
 .faces small { letter-spacing: 0; font-size: 11px; margin-left: 4px; }
+.space-pill { position: relative; z-index: 1; margin-bottom: 10px; border: 1px solid rgba(255,255,255,.35); background: rgba(255,255,255,.2); color: #fff; padding: 6px 12px; border-radius: 99px; font-weight: 600; font-size: 13px; cursor: pointer; backdrop-filter: blur(6px); }

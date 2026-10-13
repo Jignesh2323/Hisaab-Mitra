@@ -26,12 +26,31 @@ function newCode() {
   return Array.from(a, x => chars[x % chars.length]).join('');
 }
 
+// Space: har vyakti / society ka alag data. Ek phone me kai space ho sakte hain (personal + link wale).
+const spaces = {
+  list() { return store.get('hm_spaces', []); },
+  get current() { return store.get('hm_space', ''); },
+  add(code, name) {
+    const l = spaces.list().filter(x => x.code !== code);
+    l.push({ code, name: name || l.find(x => x.code === code)?.name || 'Space' });
+    store.set('hm_spaces', l);
+  },
+  use(code, name) { spaces.add(code, name); store.set('hm_space', code); },
+  name(code = spaces.current) { return spaces.list().find(x => x.code === code)?.name || 'Space'; },
+};
+const SPACE = spaces.current;
+const spaceLink = code => `${location.origin}${location.pathname}#space=${code}`;
+function newSpaceCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from(crypto.getRandomValues(new Uint8Array(12)), x => chars[x % chars.length]).join('');
+}
+
 // Har program ka apna client, jo share code header me bhejta hai (database isi se access deta hai)
 const clients = {};
 function db(code) {
   if (!clients[code]) {
     clients[code] = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-      global: { headers: { 'x-hm-code': code } },
+      global: { headers: { 'x-hm-code': code, 'x-hm-space': SPACE } },
       auth: { persistSession: false, autoRefreshToken: false, storageKey: 'hm-' + code },
     });
   }
@@ -50,7 +69,7 @@ const store = {
 const myPrograms = () => store.get('hm_programs', []);
 function saveMyProgram(p) {
   const list = myPrograms().filter(x => x.code !== p.code);
-  list.unshift({ code: p.code, name: p.name, type: p.type, private: !!p.is_private });
+  list.unshift({ code: p.code, name: p.name, type: p.type, private: !!p.is_private, space: p.space || SPACE });
   store.set('hm_programs', list);
 }
 const forgetProgram = code => store.set('hm_programs', myPrograms().filter(x => x.code !== code));
@@ -178,6 +197,7 @@ function goHome(fromHistory) {
   if (!fromHistory) saveRoute(false);
   $('#title').textContent = 'HisaabMitra';
   $('#backBtn').classList.add('hidden');
+  if (!SPACE) return renderSpaceSetup();
   if (!state.programs) app.innerHTML = '<div class="loading">Load ho raha hai…</div>';
   else renderHome();
   loadPrograms().then(() => { if (state.view === 'home') renderHome(); })
@@ -187,9 +207,9 @@ function goHome(fromHistory) {
 // Sabhi programs (sabko dikhte hain), naye pehle
 async function loadPrograms() {
   const cols = 'id,code,name,type,days,created_at,is_private';
-  const pub = check(await db('ALL').from('hm_programs').select(cols).order('created_at', { ascending: false }));
-  // Private program sirf unke code se milte hain jo is phone ne link se khole the
-  const mine = myPrograms().filter(x => x.private && !pub.some(p => p.code === x.code));
+  const pub = check(await db('ALL').from('hm_programs').select(cols).eq('space', SPACE).order('created_at', { ascending: false }));
+  // Private program sirf unke code se milte hain jo is phone ne isi space me link se khole the
+  const mine = myPrograms().filter(x => x.private && (x.space || SPACE) === SPACE && !pub.some(p => p.code === x.code));
   const priv = (await Promise.all(mine.map(x => db(x.code).from('hm_programs').select(cols).eq('code', x.code).maybeSingle()
     .then(r => { if (!r.error && !r.data) forgetProgram(x.code); return r.data; }).catch(() => null)))).filter(Boolean);
   state.programs = [...priv, ...pub].sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -202,6 +222,7 @@ function renderHome() {
   const list = all.filter(p => !q || p.name.toLowerCase().includes(q));
   app.innerHTML = `
     <div class="home-hero">
+      <button class="space-pill" id="spaceBtn">🏠 <span data-notr>${esc(spaces.name())}</span> ▾</button>
       <h2>🙏 Namaste!</h2>
       <p>Collection, kharcha aur hisaab, sab ek jagah.</p>
       <div class="hero-num"><div><b>${all.length}</b>Programs</div>
@@ -220,6 +241,7 @@ function renderHome() {
     <button class="fab" id="newBtn">＋ Naya Program</button>`;
   app.querySelectorAll('.item').forEach(el => el.onclick = () => openProgram(el.dataset.code));
   $('#newBtn').onclick = () => programForm();
+  $('#spaceBtn').onclick = spaceMenu;
   const hs = $('#homeSearch');
   if (hs) hs.oninput = () => { state.homeQ = hs.value; renderHome(); const n = $('#homeSearch'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
 }
@@ -228,6 +250,76 @@ function renderHome() {
 const isGroup = p => p.type === 'friends' || p.type === 'trip';
 const isTrip = p => p.type === 'trip';
 const TYPE_LABEL = { flat: '🏢 Society / Flat', friends: '👥 Friends', trip: '🧳 Trip' };
+
+// Pehli baar: space banao ya link se judo
+function renderSpaceSetup() {
+  $('#title').textContent = 'HisaabMitra';
+  app.innerHTML = `
+    <div class="home-hero"><h2>🙏 Swagat hai!</h2><p>Shuru karne ke liye apna space banao, ya kisi ka bheja link kholo.</p></div>
+    <div class="card">
+      <div class="bold">✨ Naya space banao</div>
+      <p class="muted">Aapka apna alag data. Sirf jinhe aap link doge unhe dikhega.</p>
+      <label>Space ka naam</label><input type="text" id="spName" placeholder="Jaise Mera personal, Shanti Society">
+      <button class="btn primary block" id="spNew" style="margin-top:10px">Space banao</button>
+    </div>
+    <div class="card">
+      <div class="bold">🔗 Link mila hai?</div>
+      <p class="muted">Kisi ne space ka link bheja ho to use yahan paste karo, ya seedha link kholo.</p>
+      <input type="text" id="spJoin" placeholder="Link ya space code">
+      <button class="btn block" id="spGo" style="margin-top:10px">Join karo</button>
+    </div>`;
+  $('#spNew').onclick = () => { spaces.use(newSpaceCode(), $('#spName').value.trim() || 'Mera space'); location.reload(); };
+  $('#spGo').onclick = () => joinSpace($('#spJoin').value);
+}
+
+function joinSpace(v, name) {
+  const code = (String(v).match(/space=([A-Z0-9]+)/i)?.[1] || String(v)).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  if (code.length < 8) return toast('Sahi link ya code daalo');
+  spaces.use(code, name || prompt('Is space ka naam? (sirf aapke phone me dikhega)', 'Society') || 'Space');
+  location.hash = ''; location.reload();
+}
+
+// Space badlo / naya / link share
+function spaceMenu() {
+  const l = spaces.list();
+  openModal(`<h2>🏠 Mere spaces</h2>
+    <p class="muted">Har space ka data alag hai. Tap karke badlo.</p>
+    <div class="list" style="margin:10px 0">${l.map(x => `<div class="item" data-sp="${x.code}">
+      <div class="badge ${x.code === SPACE ? 'ok' : ''}">${x.code === SPACE ? '✅' : '🏠'}</div>
+      <div class="grow"><div class="bold ellipsis" data-notr>${esc(x.name)}</div><div class="muted">${x.code === SPACE ? 'Abhi khula hai' : 'Kholne ke liye tap karo'}</div></div></div>`).join('')}</div>
+    <button class="btn primary block" id="spShare">🔗 "${esc(spaces.name())}" ka link share karo</button>
+    <p class="muted small" style="margin:6px 0 0">Jise link doge wo is space ke saare (public) programs dekh aur badal sakega.</p>
+    <div class="btns" style="margin-top:12px">
+      <button class="btn sm" id="spRename">✏️ Naam badlo</button>
+      <button class="btn sm" id="spAdd">✨ Naya space</button>
+      <button class="btn sm" id="spJoin2">🔗 Link se judo</button>
+      ${l.length > 1 ? '<button class="btn sm danger" id="spRemove">Is phone se hatao</button>' : ''}
+    </div>
+    <div class="actions"><button class="btn block" onclick="closeModal()">Band karo</button></div>`);
+  $('#sheet').querySelectorAll('[data-sp]').forEach(el => el.onclick = () => {
+    if (el.dataset.sp === SPACE) return closeModal();
+    store.set('hm_space', el.dataset.sp); history.replaceState(null, '', location.pathname); location.reload();
+  });
+  const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
+  on('spShare', async () => {
+    const url = spaceLink(SPACE), text = `HisaabMitra me "${spaces.name()}" ka hisaab dekho:`;
+    try {
+      if (navigator.share) await navigator.share({ title: spaces.name(), text, url });
+      else { await navigator.clipboard.writeText(`${text} ${url}`); toast('Link copy ho gaya'); }
+    } catch (e) { if (e.name !== 'AbortError') prompt('Ye link copy karo:', url); }
+  });
+  on('spRename', () => { const n = prompt('Space ka naya naam', spaces.name()); if (n?.trim()) { spaces.add(SPACE, n.trim()); spaceMenu(); renderHome(); } });
+  on('spAdd', () => {
+    const n = prompt('Naye space ka naam', 'Mera personal'); if (n === null) return;
+    spaces.use(newSpaceCode(), n.trim() || 'Space'); history.replaceState(null, '', location.pathname); location.reload();
+  });
+  on('spJoin2', () => { const v = prompt('Space ka link ya code paste karo'); if (v) joinSpace(v); });
+  on('spRemove', async () => {
+    if (!await confirmBox(`"${spaces.name()}" is phone se hatega. Data online rahega, link se dobara jud sakte ho. Pakka?`)) return;
+    const rest = spaces.list().filter(x => x.code !== SPACE);
+    store.set('hm_spaces', rest); store.set('hm_space', rest[0]?.code || ''); location.reload();
+  });
+}
 
 // Collection kitne din/program ka hai. 1 = ek hi program (program-wise hisaab chhupa rahega)
 const daysOf = p => Math.max(1, parseInt(p.days) || 1);
@@ -287,7 +379,7 @@ function programForm(existing) {
         closeModal(); toast('Save ho gaya'); refresh();
       } else {
         const code = newCode();
-        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, is_private }).select().single());
+        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, is_private, space: SPACE }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
           const srcProg = (state.programs || []).find(x => x.code === copyFrom);
@@ -1042,8 +1134,9 @@ async function restoreBackup(file) {
     const data = JSON.parse(await file.text());
     if (data.app !== 'HisaabMitra' || !data.program) throw new Error('Ye HisaabMitra ki backup file nahi hai');
     const code = newCode(), c = db(code);
+    if (!SPACE) throw new Error('Pehle space banao');
     const prog = check(await c.from('hm_programs').insert({
-      code, name: data.program.name + ' (restore)', type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), is_private: !!data.program.is_private,
+      code, name: data.program.name + ' (restore)', type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), is_private: !!data.program.is_private, space: SPACE,
     }).select().single());
     const idMap = {};
     for (const m of data.members || []) {
@@ -1210,7 +1303,27 @@ document.addEventListener('visibilitychange', () => {
 // ---------- start ----------
 i18n.start();
 showLock();
-const startRoute = readRoute();
-if (startRoute.code) openProgram(startRoute.code, null, startRoute.tab, true);
-else goHome();
+const spaceFromLink = location.hash.match(/space=([A-Z0-9]+)/i)?.[1];
+if (spaceFromLink) {
+  // Space ka link khola
+  if (spaces.list().some(x => x.code === spaceFromLink.toUpperCase())) { store.set('hm_space', spaceFromLink.toUpperCase()); history.replaceState(null, '', location.pathname); location.reload(); }
+  else setTimeout(() => joinSpace(spaceFromLink), 300);
+} else if (!SPACE && myPrograms().length) {
+  // Pehle se use kar rahe the: kisi khule program se apna space pehchano
+  (async () => {
+    for (const x of myPrograms()) {
+      try {
+        const r = await db(x.code).from('hm_programs').select('space,is_private').eq('code', x.code).maybeSingle();
+        if (r.data?.space && !r.data.is_private) { spaces.use(r.data.space, 'Mera space'); return location.reload(); }
+      } catch {}
+    }
+    startApp();
+  })();
+} else startApp();
+
+function startApp() {
+  const startRoute = readRoute();
+  if (startRoute.code) openProgram(startRoute.code, null, startRoute.tab, true);
+  else goHome();
+}
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
