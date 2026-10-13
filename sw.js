@@ -1,4 +1,4 @@
-const CACHE = 'hisaabmitra-v3';
+const CACHE = 'hisaabmitra-v4';
 const SHELL = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -15,8 +15,10 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.hostname.endsWith('supabase.co')) return;
+  // Apni files hamesha server se check karo (browser ka purana cache nahi), taaki update turant aaye
+  const req = url.origin === location.origin ? fetch(url.href, { cache: 'no-cache' }) : fetch(e.request);
   e.respondWith(
-    fetch(e.request).then(res => {
+    req.then(res => {
       const copy = res.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy));
       return res;
