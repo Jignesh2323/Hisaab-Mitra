@@ -87,6 +87,10 @@ function applyTheme(t) {
 applyTheme(store.get('hm_theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 $('#backBtn').onclick = () => goHome();
 
+// App ka naam: beech me, "Mitra" highlight
+const BRAND = '<span class="brand"><img src="logo.svg" alt="" class="brand-logo" onerror="this.remove()"><span>Hisaab</span><span class="brand-hi">Mitra</span></span>';
+$('#title').innerHTML = BRAND;
+
 // ---------- modal ----------
 // Popup khulne par history me ek entry: phone ka back pehle popup band kare, phir page
 let skipPop = 0;
@@ -232,7 +236,7 @@ function calc(d) {
 function goHome(fromHistory) {
   state.view = 'home'; state.code = null; state.data = null;
   if (!fromHistory) saveRoute(false);
-  $('#title').textContent = 'HisaabMitra';
+  $('#title').innerHTML = BRAND;
   $('#backBtn').classList.add('hidden');
   if (!SPACE) return renderSpaceSetup();
   if (!state.programs) app.innerHTML = '<div class="loading">Load ho raha hai…</div>';
@@ -354,7 +358,7 @@ async function undelete(r) {
 
 // Pehli baar: space banao ya link se judo
 function renderSpaceSetup() {
-  $('#title').textContent = 'HisaabMitra';
+  $('#title').innerHTML = BRAND;
   app.innerHTML = `
     <div class="home-hero"><h2>🙏 Swagat hai!</h2><p>Shuru karne ke liye apna space banao, ya kisi ka bheja link kholo.</p></div>
     <div class="card">
