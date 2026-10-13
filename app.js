@@ -139,7 +139,7 @@ function calc(d) {
     if (creditors[j].amt < 0.01) j++;
   }
   // Program-wise (Din 1, Din 2...) kharcha, pehli entry ke kram me
-  const evMap = new Map();
+  const evMap = new Map(dayNames(p).map(n => [n, 0]));
   [...expenses].reverse().forEach(e => {
     const k = (e.event || '').trim() || 'Bina program';
     evMap.set(k, (evMap.get(k) || 0) + num(e.amount));
@@ -150,8 +150,9 @@ function calc(d) {
 }
 
 // ---------- HOME ----------
-function goHome() {
+function goHome(fromHistory) {
   state.view = 'home'; state.code = null; state.data = null;
+  if (!fromHistory) saveRoute(false);
   $('#title').textContent = 'HisaabMitra';
   $('#backBtn').classList.add('hidden');
   renderHome();
@@ -183,20 +184,35 @@ function renderHome() {
   if (hs) hs.oninput = () => { state.homeQ = hs.value; renderHome(); const n = $('#homeSearch'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
 }
 
+// Collection kitne din/program ka hai. 1 = ek hi program (program-wise hisaab chhupa rahega)
+const daysOf = p => Math.max(1, parseInt(p.days) || 1);
+const dayNames = p => Array.from({ length: daysOf(p) > 1 ? daysOf(p) : 0 }, (_, i) => `Din ${i + 1}`);
+// Purane program jinme pehle se "Din 1" jaisa kharcha hai, wo bhi kai din wale maane jayenge
+const multiDay = p => daysOf(p) > 1 || (p.id && state.data?.program?.id === p.id && state.data.expenses.some(e => (e.event || '').trim()));
+
 // New / edit program
 function programForm(existing) {
   const others = myPrograms().filter(p => !existing || p.code !== existing.code);
-  const p = existing || { name: '', type: 'flat', fixed_amount: 0 };
+  const p = existing || { name: '', type: 'flat', fixed_amount: 0, days: 1 };
   openModal(`<h2>${existing ? 'Program edit karo' : 'Naya Program'}</h2>
     <label>Program ka naam</label><input type="text" id="pName" placeholder="Jaise Ganpati Utsav 2026" value="${esc(p.name)}">
     <label>Type</label>
     <div class="seg"><button class="btn ${p.type === 'flat' ? 'primary' : ''}" data-t="flat">🏢 Society / Flat</button><button class="btn ${p.type === 'friends' ? 'primary' : ''}" data-t="friends">👥 Friends</button></div>
+    <label>Ye collection kitne program ka hai?</label>
+    <div class="seg"><button class="btn ${!multiDay(p) ? 'primary' : ''}" data-d="1">🎯 Ek program</button><button class="btn ${multiDay(p) ? 'primary' : ''}" data-d="many">📅 Kai din ka</button></div>
+    <div id="pDaysBox" class="${multiDay(p) ? '' : 'hidden'}"><label>Kitne din / program?</label>
+      <input type="number" id="pDays" inputmode="numeric" min="2" max="31" step="1" value="${daysOf(p) > 1 ? daysOf(p) : 4}"></div>
     <label>Fixed amount har member (₹) <span class="muted">— nahi hai to 0 rakho</span></label>
     <input type="number" id="pFixed" inputmode="decimal" min="0" value="${num(p.fixed_amount) || ''}" placeholder="0">
     ${!existing && others.length ? `<label>Pichhle program se member list copy karo (optional)</label>
       <select id="pCopy"><option value="">— Copy mat karo —</option>${others.map(o => `<option value="${esc(o.code)}">${esc(o.name)}</option>`).join('')}</select>` : ''}
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="pSave">${existing ? 'Save' : 'Banao'}</button></div>`);
-  let type = p.type;
+  let type = p.type, many = multiDay(p);
+  $('#sheet').querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+    many = b.dataset.d === 'many';
+    $('#sheet').querySelectorAll('[data-d]').forEach(x => x.classList.toggle('primary', x === b));
+    $('#pDaysBox').classList.toggle('hidden', !many);
+  });
   $('#sheet').querySelectorAll('[data-t]').forEach(b => b.onclick = () => {
     type = b.dataset.t;
     $('#sheet').querySelectorAll('[data-t]').forEach(x => x.classList.toggle('primary', x === b));
@@ -206,15 +222,16 @@ function programForm(existing) {
     const name = $('#pName').value.trim();
     if (!name) return toast('Program ka naam daalo');
     const fixed_amount = num($('#pFixed').value);
+    const days = many ? Math.min(31, Math.max(2, parseInt($('#pDays').value) || 2)) : 1;
     $('#pSave').disabled = true;
     try {
       if (existing) {
-        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount }).eq('id', existing.id).select().single());
+        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days }).eq('id', existing.id).select().single());
         saveMyProgram({ ...existing, name, type });
         closeModal(); toast('Save ho gaya'); refresh();
       } else {
         const code = newCode();
-        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount }).select().single());
+        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
           const src = check(await db(copyFrom).from('hm_members').select('name,flat_no,people').order('created_at').order('flat_no'));
@@ -227,8 +244,28 @@ function programForm(existing) {
 }
 
 // ---------- PROGRAM ----------
-async function openProgram(code, preloaded) {
-  state.view = 'program'; state.code = code; state.tab = 'summary'; state.filter = 'all'; state.q = '';
+// Khula program aur tab URL (#p=CODE&t=tab) me rakho, taaki reload par wahi khule
+const TABS = ['summary', 'members', 'expenses', 'hisaab'];
+function saveRoute(push) {
+  const h = state.view === 'program' ? `#p=${state.code}&t=${state.tab}` : '';
+  if (location.hash === h) return;
+  history[push ? 'pushState' : 'replaceState'](null, '', h || location.pathname + location.search);
+}
+function readRoute() {
+  const r = new URLSearchParams(location.hash.slice(1));
+  return { code: r.get('p'), tab: TABS.includes(r.get('t')) ? r.get('t') : 'summary' };
+}
+// Phone ka back button: program se home par aao
+addEventListener('popstate', () => {
+  const r = readRoute();
+  if (!r.code) { if (state.view !== 'home') goHome(true); }
+  else if (r.code !== state.code) openProgram(r.code, null, r.tab, true);
+  else if (r.tab !== state.tab) { state.tab = r.tab; renderProgram(); }
+});
+
+async function openProgram(code, preloaded, tab = 'summary', fromHistory) {
+  state.view = 'program'; state.code = code; state.tab = tab; state.filter = 'all'; state.q = '';
+  if (!fromHistory) saveRoute(true);
   $('#backBtn').classList.remove('hidden');
   if (!preloaded) app.innerHTML = '<div class="loading">Load ho raha hai…</div>';
   try {
@@ -261,7 +298,7 @@ function renderProgram() {
     <div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${state.tab === k ? 'active' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
     ${body}
     ${fab ? `<button class="fab" id="fab">${fab}</button>` : ''}`;
-  app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { state.tab = b.dataset.tab; state.q = ''; state.filter = 'all'; state.ev = ''; renderProgram(); });
+  app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { state.tab = b.dataset.tab; state.q = ''; state.filter = 'all'; state.ev = ''; saveRoute(false); renderProgram(); });
   if (fab) $('#fab').onclick = () => state.tab === 'members' ? memberForm() : expenseForm();
   bindProgram();
 }
@@ -392,7 +429,7 @@ function expensesView(d, c) {
       <div class="stat"><div class="label">Bacha (collector)</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div></div>
     </div>
     <input type="search" class="search" id="q" placeholder="Kharcha search…" value="${esc(state.q)}">
-    ${c.events.length > 1 || (c.events[0] && c.events[0].name !== 'Bina program') ? `<div class="chips">
+    ${multiDay(p) ? `<div class="chips">
       <button class="chip ${!state.ev ? 'active' : ''}" data-ev="">Sab</button>
       ${c.events.map(ev => `<button class="chip ${state.ev === ev.name ? 'active' : ''}" data-ev="${esc(ev.name)}">${esc(ev.name)}</button>`).join('')}
     </div>` : ''}
@@ -408,6 +445,7 @@ function expensesView(d, c) {
 
 // Summary me program-wise kharcha aur per member
 function eventCard(c) {
+  if (!multiDay(state.data.program)) return '';
   if (!c.events.length || (c.events.length === 1 && c.events[0].name === 'Bina program')) return '';
   return `<div class="card">
     <div class="bold" style="margin-bottom:8px">🎉 Program-wise kharcha</div>
@@ -425,6 +463,7 @@ function eventGroups(c, list, row) {
   const groups = new Map();
   list.forEach(e => { const k = (e.event || '').trim() || 'Bina program'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); });
   const order = c.events.map(ev => ev.name).filter(k => groups.has(k));
+  if (!multiDay(state.data.program)) return `<div class="list">${list.map(row).join('')}</div>`;
   if (order.length === 1 && order[0] === 'Bina program') return `<div class="list">${list.map(row).join('')}</div>`;
   return order.map(k => {
     const ev = c.events.find(x => x.name === k);
@@ -599,9 +638,13 @@ function bulkForm() {
 function expenseForm(e) {
   const d = state.data, p = d.program;
   openModal(`<h2>${e ? 'Kharcha edit' : 'Naya kharcha'}</h2>
-    <label>Kis program ka</label><input type="text" id="eEvent" list="evList" placeholder="Jaise Din 1, Din 2" value="${esc(e ? e.event : state.lastEv || '')}">
-    <datalist id="evList">${[...new Set(d.expenses.map(x => (x.event || '').trim()).filter(Boolean))].map(x => `<option value="${esc(x)}">`).join('')}</datalist>
-    ${(() => { const evs = [...new Set(d.expenses.map(x => (x.event || '').trim()).filter(Boolean))]; return evs.length ? `<div class="chips" style="margin-top:6px">${evs.map(x => `<button type="button" class="chip" data-pick="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''; })()}
+    ${multiDay(p) ? (() => {
+      const evs = [...new Set([...dayNames(p), ...d.expenses.map(x => (x.event || '').trim()).filter(Boolean)])];
+      const cur = e ? (e.event || '') : (state.lastEv && evs.includes(state.lastEv) ? state.lastEv : evs[0]);
+      return `<label>Kis din / program ka</label>
+        <div class="chips" style="margin-bottom:0">${evs.map(x => `<button type="button" class="chip ${x === cur ? 'active' : ''}" data-pick="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+        <input type="hidden" id="eEvent" value="${esc(cur)}">`;
+    })() : `<input type="hidden" id="eEvent" value="${esc(e?.event || '')}">`}
     <label>Kis cheez ka</label><input type="text" id="eTitle" placeholder="Jaise Tent, Prasad, Petrol" value="${esc(e?.title)}">
     <label>Amount (₹)</label><input type="number" id="eAmt" inputmode="decimal" min="0" value="${e ? num(e.amount) : ''}">
     <label>Date</label><input type="date" id="eDate" value="${e?.spent_on || today()}">
@@ -616,7 +659,10 @@ function expenseForm(e) {
       ${e ? `<button class="btn danger" id="eDel">Delete</button>` : `<button class="btn" onclick="closeModal()">Cancel</button>`}
       <button class="btn primary" id="eSave">Save</button>
     </div>`);
-  $('#sheet').querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { $('#eEvent').value = b.dataset.pick; });
+  $('#sheet').querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+    $('#eEvent').value = b.dataset.pick;
+    $('#sheet').querySelectorAll('[data-pick]').forEach(x => x.classList.toggle('active', x === b));
+  });
   if (!e) $('#eTitle').focus();
   if (e) $('#eDel').onclick = async () => {
     if (!await confirmBox('Ye kharcha delete karein?')) return;
@@ -689,7 +735,7 @@ function exportPdf() {
   $('#printArea').innerHTML = `<h1>${esc(t.p.name)}</h1><div>HisaabMitra · ${new Date().toLocaleDateString('en-IN')}</div>
     <h2>Summary</h2><table><tbody>${t.summary.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(typeof v === 'number' && !['Total members', 'Total flats'].includes(k) ? rs(v) : v)}</td></tr>`).join('')}</tbody></table>
     <h2>Collection</h2>${table(t.members)}
-    ${t.events.length > 1 ? `<h2>Program-wise kharcha</h2>${table(t.events)}` : ''}
+    ${multiDay(t.p) ? `<h2>Program-wise kharcha</h2>${table(t.events)}` : ''}
     <h2>Kharcha</h2>${table(t.expenses)}
     <h2>Har member ka hisaab</h2>${table(t.hisaab)}
     ${t.settle.length > 1 ? `<h2>Kaun kisko de</h2>${table(t.settle)}` : ''}`;
@@ -702,7 +748,7 @@ function exportExcel() {
   const t = reportTables(), wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Detail', 'Value'], ...t.summary]), 'Summary');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.members), 'Collection');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.events), 'Program-wise');
+  if (multiDay(t.p)) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.events), 'Program-wise');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.expenses), 'Kharcha');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.hisaab), 'Hisaab');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.settle), 'Kaun kisko de');
@@ -729,7 +775,7 @@ async function restoreBackup(file) {
     if (data.app !== 'HisaabMitra' || !data.program) throw new Error('Ye HisaabMitra ki backup file nahi hai');
     const code = newCode(), c = db(code);
     const prog = check(await c.from('hm_programs').insert({
-      code, name: data.program.name + ' (restore)', type: data.program.type, fixed_amount: num(data.program.fixed_amount),
+      code, name: data.program.name + ' (restore)', type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program),
     }).select().single());
     const idMap = {};
     for (const m of data.members || []) {
@@ -746,5 +792,7 @@ async function restoreBackup(file) {
 }
 
 // ---------- start ----------
-goHome();
+const startRoute = readRoute();
+if (startRoute.code && myPrograms().some(x => x.code === startRoute.code)) openProgram(startRoute.code, null, startRoute.tab, true);
+else goHome();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
