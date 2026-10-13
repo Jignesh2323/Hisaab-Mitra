@@ -367,4 +367,13 @@ const I18N_DICT = [
   ['is phone se hatega. Data online rahega, link se dobara jud sakte ho. Pakka?', 'will be removed from this phone. Data stays online; you can rejoin via link. Sure?', 'इस फ़ोन से हटेगा। डेटा ऑनलाइन रहेगा, लिंक से दोबारा जुड़ सकते हैं। पक्का?', 'આ ફોનમાંથી હટશે. ડેટા ઓનલાઇન રહેશે, લિંકથી ફરી જોડાઈ શકો. પાક્કું?'],
   ['Pehle space banao', 'Create a space first', 'पहले स्पेस बनाएं', 'પહેલા સ્પેસ બનાવો'],
   ['Mera space', 'My space', 'मेरा स्पेस', 'મારું સ્પેસ'],
+  ['Sirf collection (kharcha / hisaab nahi)', 'Collection only (no expenses / settlement)', 'सिर्फ कलेक्शन (खर्च / हिसाब नहीं)', 'ફક્ત કલેક્શન (ખર્ચ / હિસાબ નહીં)'],
+  ['Paisa jama karke society ya kisi aur ko dena ho. Bas kisne kitna diya aur kul kitna aaya, wahi dikhega.', 'To collect money and hand it to the society or someone else. Shows only who paid how much and the total.', 'पैसे जमा करके सोसाइटी या किसी और को देने हों। बस किसने कितना दिया और कुल कितना आया, वही दिखेगा।', 'પૈસા ભેગા કરીને સોસાયટી કે બીજા કોઈને આપવા હોય. ફક્ત કોણે કેટલા આપ્યા અને કુલ કેટલા આવ્યા તે દેખાશે.'],
+  ['Kul collection aaya', 'Total collected', 'कुल कलेक्शन आया', 'કુલ કલેક્શન આવ્યું'],
+  [' abhi baaki', ' still due', ' अभी बाकी', ' હજુ બાકી'],
+  [' thoda', ' partial', ' थोड़ा', ' થોડું'],
+  [' log)', ' people)', ' लोग)', ' લોકો)'],
+  [' members', ' members', ' सदस्य', ' સભ્યો'],
+  [' flats · ', ' flats · ', ' फ्लैट · ', ' ફ્લેટ · '],
+  ['Sirf jinke paas link hai unhe dikhta hai.', 'Visible only to people with the link.', 'सिर्फ जिनके पास लिंक है उन्हें दिखता है।', 'ફક્ત જેની પાસે લિંક છે તેને દેખાય છે.'],
 ];

@@ -222,7 +222,8 @@ function goHome(fromHistory) {
 
 // Sabhi programs (sabko dikhte hain), naye pehle
 async function loadPrograms() {
-  const cols = 'id,code,name,type,days,created_at,is_private';
+  // hm_members(people): har program ke flat/member aur log ginne ke liye
+  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,hm_members(people)';
   const pub = check(await db('ALL').from('hm_programs').select(cols).eq('space', SPACE).order('created_at', { ascending: false }));
   // Private program sirf unke code se milte hain jo is phone ne isi space me link se khole the
   const mine = myPrograms().filter(x => x.private && (x.space || SPACE) === SPACE && !pub.some(p => p.code === x.code));
@@ -249,7 +250,8 @@ function renderHome() {
     ${list.length ? `<div class="list">${list.map(p => `
       <div class="item" data-code="${esc(p.code)}">
         <div class="badge prog-badge type-${p.type}">${TYPE_LABEL[p.type]?.split(' ')[0] || '👥'}</div>
-        <div class="grow"><div class="bold ellipsis">${p.is_private ? '🔒 ' : ''}${esc(p.name)}</div>
+        <div class="grow"><div class="bold ellipsis">${p.is_private ? '🔒 ' : ''}${p.collect_only ? '💵 ' : ''}${esc(p.name)}</div>
+          ${p.hm_members ? `<div class="small" style="margin:2px 0"><b>${p.type === 'flat' ? `🏢 ${p.hm_members.length} flats · ` : ''}👥 ${p.hm_members.reduce((t, m) => t + people(m), 0)} members</b></div>` : ''}
           <div class="muted">${(TYPE_LABEL[p.type] || '').replace(/^\S+ /, '')}${daysOf(p) > 1 ? ` · ${daysOf(p)} din` : ''} · ${new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div></div>
         <div class="muted">›</div>
       </div>`).join('')}</div>`
@@ -412,6 +414,9 @@ function programForm(existing) {
       <input type="number" id="pDays" inputmode="numeric" min="2" max="31" step="1" value="${daysOf(p) > 1 ? daysOf(p) : 4}"></div>
     <label class="row" style="gap:8px;color:var(--text);margin-top:14px"><input type="checkbox" id="pPrivate" ${p.is_private ?? (p.type === 'trip') ? 'checked' : ''} style="width:20px;height:20px">
       🔒 Private: sirf link walon ko dikhe</label>
+    <label class="row" style="gap:8px;color:var(--text);margin-top:10px"><input type="checkbox" id="pCollect" ${p.collect_only ? 'checked' : ''} style="width:20px;height:20px">
+      💵 Sirf collection (kharcha / hisaab nahi)</label>
+    <p class="muted small" style="margin:2px 0 0">Paisa jama karke society ya kisi aur ko dena ho. Bas kisne kitna diya aur kul kitna aaya, wahi dikhega.</p>
     <p class="muted small" style="margin:2px 0 0">Private program kisi ki list me nahi aata. Summary se link bhejo, jo kholega usi ko dikhega.</p>
     <label>Fixed amount har member (₹) <span class="muted">— nahi hai to 0 rakho</span></label>
     <input type="number" id="pFixed" inputmode="decimal" min="0" value="${num(p.fixed_amount) || ''}" placeholder="0">
@@ -441,15 +446,16 @@ function programForm(existing) {
     const fixed_amount = num($('#pFixed').value);
     const days = many ? Math.min(31, Math.max(2, parseInt($('#pDays').value) || 2)) : 1;
     const is_private = $('#pPrivate').checked;
+    const collect_only = $('#pCollect').checked;
     $('#pSave').disabled = true;
     try {
       if (existing) {
-        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, is_private }).eq('id', existing.id).select().single());
+        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, is_private, collect_only }).eq('id', existing.id).select().single());
         saveMyProgram({ ...existing, name, type, is_private });
         closeModal(); toast('Save ho gaya'); refresh();
       } else {
         const code = newCode();
-        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, is_private, space: SPACE }).select().single());
+        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, is_private, collect_only, space: SPACE }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
           const srcProg = (state.programs || []).find(x => x.code === copyFrom);
@@ -507,7 +513,9 @@ function renderProgram() {
   state.programs = null;
   const d = state.data, p = d.program, c = calc(d);
   $('#title').textContent = p.name;
-  const tabs = [['summary', '📊', 'Summary'], ['members', p.type === 'flat' ? '🏢' : '👥', p.type === 'flat' ? 'Flats' : 'Members'], ['expenses', '🧾', 'Kharcha'], ['hisaab', '🤝', 'Hisaab']];
+  const tabs = [['summary', '📊', 'Summary'], ['members', p.type === 'flat' ? '🏢' : '👥', p.type === 'flat' ? 'Flats' : 'Members'], ['expenses', '🧾', 'Kharcha'], ['hisaab', '🤝', 'Hisaab']]
+    .filter(([k]) => !p.collect_only || k === 'summary' || k === 'members');
+  if (p.collect_only && !['summary', 'members'].includes(state.tab)) state.tab = 'summary';
   let body = '';
   if (state.tab === 'summary') body = summaryView(d, c);
   if (state.tab === 'members') body = membersView(d, c);
@@ -525,6 +533,7 @@ function renderProgram() {
 
 function summaryView(d, c) {
   const p = d.program, unit = p.type === 'flat' ? 'flat' : 'member';
+  if (p.collect_only) return collectSummary(d, c);
   return `
     <div class="stats">
       <div class="stat wide"><div class="label">💰 Abhi collector ke haath me</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div>
@@ -677,6 +686,48 @@ function expensesView(d, c) {
         <div class="amt ${isDep(e) && !depBack(e) ? 'amber' : ''}">${rs(e.amount)}</div>
       </div>`)
       : `<div class="card empty">${d.expenses.length ? 'Koi match nahi mila.' : 'Abhi koi kharcha nahi. Neeche ＋ dabao.'}</div>`}`;
+}
+
+// Sirf collection: kul jama, kitne flat/member ne diya, kitna baaki
+function collectSummary(d, c) {
+  const p = d.program, flat = p.type === 'flat';
+  const paidUnits = d.members.filter(m => num(m.paid) > 0);
+  const paidPeople = paidUnits.reduce((s, m) => s + people(m), 0);
+  return `
+    <div class="stats">
+      <div class="stat wide"><div class="label">💵 Kul collection aaya</div><div class="value">${rs(c.collected)}</div>
+        <div class="muted">${paidUnits.length} ${flat ? 'flat' : 'member'}${flat ? ` (${paidPeople} log)` : ''} ne diya${c.fixed > 0 ? ` · ${rs(c.pending)} abhi baaki` : ''}</div></div>
+      ${flat ? `
+      <div class="stat"><div class="label">🏢 Total flats</div><div class="value">${c.n}</div></div>
+      <div class="stat"><div class="label">👥 Total members</div><div class="value">${c.persons}</div></div>` : `
+      <div class="stat"><div class="label">👥 Total members</div><div class="value">${c.n}</div></div>`}
+      <div class="stat"><div class="label">✅ Diya</div><div class="value">${c.counts.ok}${c.counts.part ? ` <span class="small">+ ${c.counts.part} thoda</span>` : ''}</div></div>
+      <div class="stat"><div class="label">❌ Nahi diya</div><div class="value">${c.counts.no}</div></div>
+      ${c.fixed > 0 ? `
+      <div class="stat"><div class="label">🎯 Fixed / member</div><div class="value">${rs(c.fixed)}</div></div>
+      <div class="stat"><div class="label">📈 Expected total</div><div class="value">${rs(c.expected)}</div></div>
+      <div class="stat wide" style="--g:linear-gradient(135deg,#f59e0b,#ef4444);--glow:rgba(239,68,68,.5)"><div class="label">⏳ Abhi baaki (pending)</div><div class="value">${rs(c.pending)}</div></div>` : ''}
+    </div>
+    <div class="card">
+      <div class="bold" style="margin-bottom:8px">📤 Export / Backup</div>
+      <div class="btns">
+        <button class="btn sm" id="pdfBtn">🖨️ PDF</button>
+        <button class="btn sm" id="xlsBtn">📊 Excel</button>
+        <button class="btn sm" id="bakBtn">💾 Backup</button>
+      </div>
+    </div>
+    ${p.is_private ? `<div class="card">
+      <div class="bold">🔒 Private program</div>
+      <p class="muted" style="margin:4px 0 8px">Sirf jinke paas link hai unhe dikhta hai.</p>
+      <button class="btn primary block" id="shareLink">🔗 Link share karo</button>
+    </div>` : ''}
+    <div class="card">
+      <div class="bold" style="margin-bottom:8px">⚙️ Program settings</div>
+      <div class="btns">
+        <button class="btn sm" id="editProg">✏️ Program edit</button>
+        <button class="btn sm danger" id="delProg">🗑️ Program delete</button>
+      </div>
+    </div>`;
 }
 
 // Summary: jinhone apni jeb se kharcha kiya, unhe kitna lautana baaki
@@ -1215,7 +1266,7 @@ async function restoreBackup(file, fromHistory) {
     const code = newCode(), c = db(code);
     if (!SPACE) throw new Error('Pehle space banao');
     const prog = check(await c.from('hm_programs').insert({
-      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), is_private: !!data.program.is_private, space: SPACE,
+      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), is_private: !!data.program.is_private, collect_only: !!data.program.collect_only, space: SPACE,
     }).select().single());
     const idMap = {};
     for (const m of data.members || []) {

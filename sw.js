@@ -1,4 +1,4 @@
-const CACHE = 'hisaabmitra-v26';
+const CACHE = 'hisaabmitra-v27';
 const SHELL = ['./', './index.html', './style.css', './app.js', './i18n.js', './i18n-dict.js', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
