@@ -260,6 +260,8 @@ function goHome(fromHistory) {
   $('#title').innerHTML = BRAND;
   $('#backBtn').classList.add('hidden');
   if (!SPACE) return renderSpaceSetup();
+  // Tez: pichhli baar ki list turant dikhao, taaza data aate hi badal jayegi
+  if (!state.programs) { const cached = store.get('hm_c_home_' + SPACE, null); if (cached) state.programs = cached; }
   if (!state.programs) app.innerHTML = '<div class="loading">Load ho raha hai…</div>';
   else renderHome();
   loadPrograms().then(() => { if (state.view === 'home') renderHome(); })
@@ -276,6 +278,7 @@ async function loadPrograms() {
   const priv = (await Promise.all(mine.map(x => db(x.code).from('hm_programs').select(cols).eq('code', x.code).maybeSingle()
     .then(r => { if (!r.error && !r.data) forgetProgram(x.code); return r.data; }).catch(() => null)))).filter(Boolean);
   state.programs = [...priv, ...pub].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  store.set('hm_c_home_' + SPACE, state.programs);
   return state.programs;
 }
 
@@ -662,20 +665,24 @@ async function openProgram(code, preloaded, tab = 'summary', fromHistory) {
   state.view = 'program'; state.code = code; state.tab = tab; state.filter = 'all'; state.q = '';
   if (!fromHistory) saveRoute(true);
   $('#backBtn').classList.remove('hidden');
-  if (!preloaded) app.innerHTML = '<div class="loading">Load ho raha hai…</div>';
+  const cached = !preloaded && store.get('hm_c_p_' + code, null);
+  if (cached) { state.data = cached; renderProgram(); }
+  else if (!preloaded) app.innerHTML = '<div class="loading">Load ho raha hai…</div>';
   try {
     const d = preloaded || await loadProgram(code);
+    if (state.code !== code || state.view !== 'program') return;
     if (!d) {
       toast('Ye program nahi mila, shayad delete ho gaya');
       return goHome();
     }
-    state.data = d; saveMyProgram(d.program); renderProgram();
+    state.data = d; saveMyProgram(d.program); store.set('hm_c_p_' + code, d); renderProgram();
   } catch (e) {
+    if (cached) return toast('Internet nahi hai, pichhla data dikh raha hai');
     app.innerHTML = `<div class="card empty">Data load nahi hua. Internet check karo.<br><span class="small">${esc(e.message)}</span><br><br><button class="btn primary" onclick="openProgram('${esc(code)}')">Dobara try karo</button></div>`;
   }
 }
 async function refresh() {
-  try { const d = await loadProgram(state.code); if (d) { state.data = d; renderProgram(); } }
+  try { const d = await loadProgram(state.code); if (d) { state.data = d; store.set('hm_c_p_' + state.code, d); renderProgram(); } }
   catch (e) { toast('Refresh nahi hua: ' + e.message); }
 }
 
@@ -1542,8 +1549,17 @@ function exportPdf() {
   setTimeout(() => window.print(), 300);
 }
 
-function exportExcel() {
-  if (!window.XLSX) return toast('Excel tool load ho raha hai, thodi der baad try karo');
+// Excel library (~900KB) sirf zarurat par load hoti hai, app khulna tez rahe
+function loadXLSX() {
+  return window.XLSX ? Promise.resolve() : new Promise((ok, bad) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload = ok; sc.onerror = () => bad(new Error('Excel tool load nahi hua'));
+    document.head.appendChild(sc);
+  });
+}
+async function exportExcel() {
+  if (!window.XLSX) { toast('Excel taiyaar ho raha hai…'); try { await loadXLSX(); } catch (e) { return toast(e.message); } }
   const t = reportTables(), wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Detail', 'Value'], ...t.summary]), 'Summary');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(t.members), 'Collection');
