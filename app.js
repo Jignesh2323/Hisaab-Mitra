@@ -147,7 +147,6 @@ function renderHome() {
   const list = myPrograms().filter(p => !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q));
   app.innerHTML = `
     <div class="btns" style="margin-bottom:12px">
-      <button class="btn" id="joinBtn">🔑 Code se join</button>
       <button class="btn" id="restoreBtn">📂 Backup restore</button>
     </div>
     ${myPrograms().length ? `<input type="search" class="search" id="homeSearch" placeholder="Program search karo…" value="${esc(state.homeQ)}">` : ''}
@@ -158,34 +157,15 @@ function renderHome() {
           <div class="muted">${p.type === 'flat' ? 'Society / Flat' : 'Friends group'} · Code <span class="code">${esc(p.code)}</span></div></div>
         <div class="muted">›</div>
       </div>`).join('')}</div>`
-      : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Naya program banao, ya kisi ka share code daal ke join karo.</p>`}</div>`}
+      : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Neeche ＋ dabake naya program banao.</p>`}</div>`}
     <input type="file" id="restoreFile" accept=".json,application/json" hidden>
     <button class="fab" id="newBtn">＋ Naya Program</button>`;
   app.querySelectorAll('.item').forEach(el => el.onclick = () => openProgram(el.dataset.code));
   $('#newBtn').onclick = () => programForm();
-  $('#joinBtn').onclick = joinForm;
   $('#restoreBtn').onclick = () => $('#restoreFile').click();
   $('#restoreFile').onchange = e => restoreBackup(e.target.files[0]);
   const hs = $('#homeSearch');
   if (hs) hs.oninput = () => { state.homeQ = hs.value; renderHome(); const n = $('#homeSearch'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
-}
-
-function joinForm() {
-  openModal(`<h2>Code se join karo</h2>
-    <p class="muted">Program banane wale se share code maango.</p>
-    <label>Share code</label><input type="text" id="jCode" placeholder="Jaise AB7K9QXZ" autocapitalize="characters" style="text-transform:uppercase">
-    <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="jGo">Join</button></div>`);
-  $('#jCode').focus();
-  $('#jGo').onclick = async () => {
-    const code = $('#jCode').value.trim().toUpperCase();
-    if (code.length < 6) return toast('Sahi code daalo');
-    $('#jGo').disabled = true;
-    try {
-      const d = await loadProgram(code);
-      if (!d) { $('#jGo').disabled = false; return toast('Is code ka koi program nahi mila'); }
-      saveMyProgram(d.program); closeModal(); openProgram(code, d);
-    } catch (e) { $('#jGo').disabled = false; toast('Error: ' + e.message); }
-  };
 }
 
 // New / edit program
