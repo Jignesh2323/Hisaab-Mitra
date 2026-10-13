@@ -61,10 +61,6 @@ function applyTheme(t) {
   document.querySelector('meta[name=theme-color]').content = t === 'dark' ? '#0b2b27' : '#0f766e';
 }
 applyTheme(store.get('hm_theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-$('#themeBtn').onclick = () => {
-  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  store.set('hm_theme', t); applyTheme(t);
-};
 $('#backBtn').onclick = () => goHome();
 
 // ---------- modal ----------
@@ -797,7 +793,138 @@ async function restoreBackup(file) {
   } catch (e) { toast('Restore nahi hua: ' + e.message); }
 }
 
+// ---------- settings & app lock ----------
+// Lock sirf is phone/browser par lagta hai. PIN ka hash hi save hota hai, asli PIN nahi.
+const lock = {
+  get pinHash() { return store.get('hm_pin', null); },
+  get bioId() { return store.get('hm_bio', null); },
+  get on() { return !!this.pinHash; },
+};
+const unstore = k => { try { localStorage.removeItem(k); } catch {} };
+async function hashPin(pin) {
+  let salt = store.get('hm_pin_salt', null);
+  if (!salt) { salt = crypto.randomUUID(); store.set('hm_pin_salt', salt); }
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + ':' + pin));
+  return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+}
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function bioAvailable() {
+  try { return !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } catch { return false; }
+}
+// Phone ka fingerprint/face lock (WebAuthn) use hota hai. Fingerprint data phone se bahar nahi jata.
+async function bioRegister() {
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: 'HisaabMitra' },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'hisaabmitra', displayName: 'HisaabMitra' },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+    timeout: 60000,
+  } });
+  store.set('hm_bio', b64(cred.rawId));
+}
+async function bioCheck() {
+  await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    allowCredentials: [{ type: 'public-key', id: unb64(lock.bioId) }],
+    userVerification: 'required', timeout: 60000,
+  } });
+}
+
+function askPin(title, hint) {
+  return new Promise(resolve => {
+    openModal(`<h2>${title}</h2>${hint ? `<p class="muted">${hint}</p>` : ''}
+      <input type="password" id="pinIn" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="4 se 6 number" style="font-size:22px;letter-spacing:8px;text-align:center">
+      <div class="actions"><button class="btn" id="pinNo">Cancel</button><button class="btn primary" id="pinOk">OK</button></div>`);
+    const done = v => { closeModal(); resolve(v); };
+    $('#pinIn').focus();
+    $('#pinNo').onclick = () => done(null);
+    $('#pinOk').onclick = () => { const v = $('#pinIn').value.trim(); if (!/^\d{4,6}$/.test(v)) return toast('4 se 6 number ka PIN daalo'); done(v); };
+    $('#pinIn').onkeydown = e => { if (e.key === 'Enter') $('#pinOk').click(); };
+  });
+}
+
+async function openSettings() {
+  const bioOk = await bioAvailable();
+  const dark = document.documentElement.dataset.theme === 'dark';
+  openModal(`<h2>⚙️ Settings</h2>
+    <div class="bold" style="margin-top:12px">🔒 App lock</div>
+    <p class="muted">App kholte waqt PIN ya fingerprint maangega. Sirf is phone/browser par lagta hai.</p>
+    ${lock.on ? `
+      <div class="row between" style="padding:8px 0"><span>PIN lock</span><b class="green">On</b></div>
+      <div class="btns"><button class="btn sm" id="sChange">PIN badlo</button><button class="btn sm danger" id="sOff">Lock hatao</button></div>
+      <div class="row between" style="padding:12px 0 4px"><span>👆 Fingerprint / Face se kholo</span>
+        ${bioOk ? `<button class="btn sm ${lock.bioId ? 'danger' : 'primary'}" id="sBio">${lock.bioId ? 'Band karo' : 'Chalu karo'}</button>` : '<span class="muted small">Is device par nahi hai</span>'}</div>`
+    : `<button class="btn primary block" id="sSet">PIN set karo</button>
+       <p class="muted small" style="margin-top:6px">Fingerprint / Face lock ke liye pehle PIN set karo. Fingerprint na chale to PIN kaam aayega.</p>`}
+    <div class="bold" style="margin-top:16px">🎨 Theme</div>
+    <div class="seg" style="margin-top:6px"><button class="btn ${!dark ? 'primary' : ''}" data-th="light">☀️ Light</button><button class="btn ${dark ? 'primary' : ''}" data-th="dark">🌙 Dark</button></div>
+    <div class="actions"><button class="btn block" onclick="closeModal()">Band karo</button></div>`);
+  const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
+  $('#sheet').querySelectorAll('[data-th]').forEach(b => b.onclick = () => { store.set('hm_theme', b.dataset.th); applyTheme(b.dataset.th); openSettings(); });
+  const setNew = async () => {
+    const a = await askPin('Naya PIN', '4 se 6 number ka PIN chuno.'); if (!a) return openSettings();
+    const b = await askPin('PIN dobara daalo'); if (!b) return openSettings();
+    if (a !== b) { toast('Dono PIN alag hain, dobara try karo'); return openSettings(); }
+    store.set('hm_pin', await hashPin(a)); toast('PIN set ho gaya'); openSettings();
+  };
+  const verifyOld = async () => {
+    const o = await askPin('Purana PIN daalo');
+    if (o && await hashPin(o) === lock.pinHash) return true;
+    if (o) toast('Galat PIN');
+    openSettings(); return false;
+  };
+  on('sSet', setNew);
+  on('sChange', async () => { if (await verifyOld()) setNew(); });
+  on('sOff', async () => {
+    if (!await verifyOld()) return;
+    unstore('hm_pin'); unstore('hm_bio'); toast('Lock hata diya'); openSettings();
+  });
+  on('sBio', async () => {
+    if (lock.bioId) { unstore('hm_bio'); toast('Fingerprint lock band'); return openSettings(); }
+    try { await bioRegister(); toast('Fingerprint / Face lock chalu'); }
+    catch (e) { toast('Chalu nahi hua: ' + (e.name === 'NotAllowedError' ? 'cancel ho gaya' : e.message)); }
+    openSettings();
+  });
+}
+$('#settingsBtn').onclick = openSettings;
+
+// Lock screen: sab kuchh dhak deta hai jab tak PIN / fingerprint sahi na ho
+function showLock() {
+  if (!lock.on || $('#lockScreen')) return;
+  const el = document.createElement('div');
+  el.id = 'lockScreen'; el.className = 'lock';
+  el.innerHTML = `<div class="lock-box">
+    <div style="font-size:44px">🔒</div><h2>HisaabMitra</h2>
+    <input type="password" id="lkPin" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="PIN">
+    <button class="btn primary block" id="lkGo">Kholo</button>
+    ${lock.bioId ? `<button class="btn block" id="lkBio" style="margin-top:8px">👆 Fingerprint / Face se kholo</button>` : ''}
+    <div id="lkMsg" class="red small" style="min-height:20px;margin-top:8px"></div></div>`;
+  document.body.appendChild(el);
+  const unlock = () => el.remove();
+  const tryPin = async () => {
+    const v = $('#lkPin').value.trim(); if (!v) return;
+    if (await hashPin(v) === lock.pinHash) unlock();
+    else if (v.length >= 6 || $('#lkGo') === document.activeElement) { $('#lkMsg').textContent = 'Galat PIN'; $('#lkPin').value = ''; $('#lkPin').focus(); }
+  };
+  const tryBio = async () => {
+    try { await bioCheck(); unlock(); }
+    catch { $('#lkMsg').textContent = 'Fingerprint nahi chala, PIN daalo'; $('#lkPin').focus(); }
+  };
+  $('#lkGo').onclick = async () => { const v = $('#lkPin').value.trim(); if (await hashPin(v) === lock.pinHash) unlock(); else { $('#lkMsg').textContent = 'Galat PIN'; $('#lkPin').value = ''; $('#lkPin').focus(); } };
+  $('#lkPin').oninput = () => { if ($('#lkPin').value.length >= 4) tryPin(); };
+  $('#lkPin').onkeydown = e => { if (e.key === 'Enter') $('#lkGo').click(); };
+  if (lock.bioId) { $('#lkBio').onclick = tryBio; tryBio(); } else $('#lkPin').focus();
+}
+// App 1 minute se zyada background me rahe to dobara lock
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) state.hiddenAt = Date.now();
+  else if (state.hiddenAt && Date.now() - state.hiddenAt > 60000) showLock();
+});
+
 // ---------- start ----------
+showLock();
 const startRoute = readRoute();
 if (startRoute.code) openProgram(startRoute.code, null, startRoute.tab, true);
 else goHome();
