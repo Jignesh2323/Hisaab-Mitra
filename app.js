@@ -72,13 +72,13 @@ function confirmBox(msg) { return Promise.resolve(confirm(msg)); }
 // ---------- data load ----------
 async function loadProgram(code) {
   const c = db(code);
-  const [p, m, e] = await Promise.all([
-    c.from('hm_programs').select('*').eq('code', code).maybeSingle(),
-    c.from('hm_members').select('*').order('created_at').order('flat_no').order('name'),
-    c.from('hm_expenses').select('*').order('spent_on', { ascending: false }).order('created_at', { ascending: false }),
-  ]);
-  const program = check(p);
+  const program = check(await c.from('hm_programs').select('*').eq('code', code).maybeSingle());
   if (!program) return null;
+  // Sirf isi program ke flats aur kharche (database ab sab programs ka data deta hai)
+  const [m, e] = await Promise.all([
+    c.from('hm_members').select('*').eq('program_id', program.id).order('created_at').order('flat_no').order('name'),
+    c.from('hm_expenses').select('*').eq('program_id', program.id).order('spent_on', { ascending: false }).order('created_at', { ascending: false }),
+  ]);
   const members = check(m);
   // Flats hamesha number ke kram me: C-202, C-402, ..., C-1004 (1004 ko 202 se pehle nahi rakhna)
   if (program.type === 'flat') members.sort((a, b) => (a.flat_no || '').localeCompare(b.flat_no || '', 'en', { numeric: true, sensitivity: 'base' }));
@@ -101,7 +101,10 @@ function memberStatus(prog, m) {
 const isDep = e => !!e.is_deposit;
 const depBack = e => e.returned != null;
 const realAmt = e => isDep(e) ? (depBack(e) ? Math.max(0, num(e.amount) - num(e.returned)) : 0) : num(e.amount);
-const cashOut = e => isDep(e) ? num(e.amount) - (depBack(e) ? num(e.returned) : 0) : num(e.amount);
+// Kisi aur ne apni jeb se diya: collector ke haath se abhi sirf utna gaya jitna lauta diya
+const payer = e => (e.payer_name || '').trim();
+const owedOf = e => payer(e) && !isDep(e) ? Math.max(0, num(e.amount) - num(e.repaid)) : 0;
+const cashOut = e => isDep(e) ? num(e.amount) - (depBack(e) ? num(e.returned) : 0) : payer(e) ? Math.min(num(e.amount), num(e.repaid)) : num(e.amount);
 
 function calc(d) {
   const { program: p, members, expenses } = d;
@@ -114,8 +117,16 @@ function calc(d) {
   const depPending = deps.filter(e => !depBack(e)).reduce((s, e) => s + num(e.amount), 0);
   const depReturned = deps.filter(depBack).reduce((s, e) => s + num(e.returned), 0);
   const depLost = deps.filter(depBack).reduce((s, e) => s + realAmt(e), 0);
-  // Collector ke haath me abhi kitna hai (deposit me fasa paisa bahar)
+  // Collector ke haath me abhi kitna hai (deposit me fasa paisa bahar, udhaar abhi chukaya nahi)
   const balance = collected - expenses.filter(e => !e.paid_by).reduce((s, e) => s + cashOut(e), 0);
+  const owed = expenses.reduce((s, e) => s + owedOf(e), 0);
+  const owedBy = new Map();
+  expenses.filter(e => payer(e) && !isDep(e)).forEach(e => {
+    const k = payer(e), o = owedBy.get(k) || { name: k, total: 0, owed: 0, items: 0 };
+    o.total += num(e.amount); o.owed += owedOf(e); o.items++; owedBy.set(k, o);
+  });
+  // Sab udhaar chukane aur deposit wapas aane ke baad asli bacha paisa
+  const finalBal = balance - owed + depPending;
   // Kharcha logon ki ginti se baanta jata hai: per member hissa x us flat ke log
   const persons = members.reduce((s, m) => s + people(m), 0);
   const perPerson = persons ? totalExp / persons : 0;
@@ -135,7 +146,6 @@ function calc(d) {
   // Settlement: collector (fund) bhi ek participant hai jiske paas balance pada hai
   const parties = rows.map(r => ({ label: r.label, net: r.net }));
   // Settlement me maana jata hai ki baaki deposit wapas aa jayega
-  const finalBal = balance + depPending;
   if (Math.abs(finalBal) > 0.009) parties.push({ label: 'Collector (Fund)', net: -finalBal, fund: true });
   const debtors = parties.filter(x => x.net < -0.009).map(x => ({ ...x, amt: -x.net })).sort((a, b) => b.amt - a.amt);
   const creditors = parties.filter(x => x.net > 0.009).map(x => ({ ...x, amt: x.net })).sort((a, b) => b.amt - a.amt);
@@ -156,7 +166,7 @@ function calc(d) {
   });
   const events = [...evMap].map(([name, total]) => ({ name, total, perPerson: persons ? total / persons : 0 }))
     .sort((a, b) => (a.name === 'Bina program') - (b.name === 'Bina program') || a.name.localeCompare(b.name, 'en', { numeric: true }));
-  return { depPending, depReturned, depLost, depCount: deps.filter(e => !depBack(e)).length, n, persons, events, perPerson, collected, fundExp, personalExp, totalExp, balance, fixed, expected, pending, counts, rows, settlements };
+  return { owed, owedBy: [...owedBy.values()].sort((a, b) => b.owed - a.owed), finalBal, depPending, depReturned, depLost, depCount: deps.filter(e => !depBack(e)).length, n, persons, events, perPerson, collected, fundExp, personalExp, totalExp, balance, fixed, expected, pending, counts, rows, settlements };
 }
 
 // ---------- HOME ----------
@@ -254,7 +264,8 @@ function programForm(existing) {
         const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
-          const src = check(await db(copyFrom).from('hm_members').select('name,flat_no,people').order('created_at').order('flat_no'));
+          const srcProg = (state.programs || []).find(x => x.code === copyFrom);
+          const src = srcProg ? check(await db(copyFrom).from('hm_members').select('name,flat_no,people').eq('program_id', srcProg.id).order('created_at').order('flat_no')) : [];
           if (src.length) check(await db(code).from('hm_members').insert(src.map(m => ({ program_id: prog.id, name: m.name, flat_no: m.flat_no, people: people(m), paid: 0 }))));
         }
         saveMyProgram(prog); closeModal(); toast('Program ban gaya!'); openProgram(code);
@@ -328,8 +339,11 @@ function summaryView(d, c) {
   const p = d.program, unit = p.type === 'flat' ? 'flat' : 'member';
   return `
     <div class="stats">
-      <div class="stat wide"><div class="label">💰 Collector ke paas bacha paisa</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div>
-        <div class="muted">${c.balance < 0 ? 'Collection se zyada kharcha ho gaya' : 'Collection − fund se hua kharcha'}${c.depPending ? ` · ${rs(c.depPending)} deposit me hai, wapas milne par judega` : ''}</div></div>
+      <div class="stat wide"><div class="label">💰 Abhi collector ke haath me</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div>
+        ${c.owed || c.depPending ? `<div class="row between" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line)">
+          <span class="small">Sab chukane${c.depPending ? ' aur deposit aane' : ''} ke baad bachega</span><b class="${c.finalBal < 0 ? 'red' : 'green'}">${rs(c.finalBal)}</b></div>
+          <div class="muted">${[c.owed ? `${rs(c.owed)} logon ko dena baaki` : '', c.depPending ? `${rs(c.depPending)} deposit aana baaki` : ''].filter(Boolean).join(' · ')}</div>`
+        : `<div class="muted">${c.balance < 0 ? 'Collection se zyada kharcha ho gaya' : 'Collection − kharcha'}</div>`}</div>
       <div class="stat"><div class="label">Total collection</div><div class="value">${rs(c.collected)}</div></div>
       <div class="stat"><div class="label">Total kharcha</div><div class="value">${rs(c.totalExp)}</div></div>
       ${p.type === 'flat' ? `
@@ -342,6 +356,7 @@ function summaryView(d, c) {
       <div class="stat"><div class="label">Expected total</div><div class="value">${rs(c.expected)}</div></div>
       <div class="stat wide" style="background:transparent;border-color:var(--line)"><div class="label">⏳ Abhi baaki (pending)</div><div class="value amber">${rs(c.pending)}</div></div>` : ''}
     </div>
+    ${owedCard(c)}
     ${depositCard(d, c)}
     ${eventCard(c)}
     <div class="card">
@@ -439,11 +454,11 @@ function expensesView(d, c) {
   const byId = Object.fromEntries(d.members.map(m => [m.id, memberLabel(p, m)]));
   const evName = e => (e.event || '').trim() || 'Bina program';
   const list = d.expenses.filter(e => (!state.ev || evName(e) === state.ev) &&
-    (!q || e.title.toLowerCase().includes(q) || evName(e).toLowerCase().includes(q) || (byId[e.paid_by] || '').toLowerCase().includes(q)));
+    (!q || e.title.toLowerCase().includes(q) || evName(e).toLowerCase().includes(q) || (byId[e.paid_by] || '').toLowerCase().includes(q) || payer(e).toLowerCase().includes(q)));
   return `
     <div class="stats">
       <div class="stat"><div class="label">Total kharcha</div><div class="value">${rs(c.totalExp)}</div></div>
-      <div class="stat"><div class="label">Bacha (collector)</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div></div>
+      <div class="stat"><div class="label">Collector ke haath me</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div></div>
     </div>
     <input type="search" class="search" id="q" placeholder="Kharcha search…" value="${esc(state.q)}">
     ${multiDay(p) ? `<div class="chips">
@@ -454,10 +469,47 @@ function expensesView(d, c) {
       <div class="item" data-eid="${e.id}">
         ${e.photo_url ? `<img class="thumb" src="${esc(e.photo_url)}" alt="" loading="lazy">` : `<div class="badge part">🧾</div>`}
         <div class="grow"><div class="bold ellipsis">${esc(e.title)}</div>
-          <div class="muted ellipsis">${isDep(e) ? (depBack(e) ? `🔁 Deposit · wapas mila ${rs(e.returned)}` : '🔁 Deposit · <span class="amber">wapas aana baaki</span>') : `${fmtDate(e.spent_on)} · ${e.paid_by ? 'Diya: ' + esc(byId[e.paid_by] || '?') : 'Fund se'}`}</div></div>
+          <div class="muted ellipsis">${isDep(e) ? (depBack(e) ? `🔁 Deposit · wapas mila ${rs(e.returned)}` : '🔁 Deposit · <span class="amber">wapas aana baaki</span>') : `${fmtDate(e.spent_on)} · ${payer(e) ? `🙋 ${esc(payer(e))} ne diya · ${owedOf(e) > 0 ? `<span class="red">${rs(owedOf(e))} dena baaki</span>` : '<span class="green">chukta</span>'}` : e.paid_by ? 'Diya: ' + esc(byId[e.paid_by] || '?') : 'Fund se'}`}</div></div>
         <div class="amt ${isDep(e) && !depBack(e) ? 'amber' : ''}">${rs(e.amount)}</div>
       </div>`)
       : `<div class="card empty">${d.expenses.length ? 'Koi match nahi mila.' : 'Abhi koi kharcha nahi. Neeche ＋ dabao.'}</div>`}`;
+}
+
+// Summary: jinhone apni jeb se kharcha kiya, unhe kitna lautana baaki
+function owedCard(c) {
+  if (!c.owedBy.length) return '';
+  return `<div class="card">
+    <div class="row between"><div class="bold">💸 Logon ko dena baaki</div>
+      ${c.owed > 0.009 ? `<b class="red">${rs(c.owed)}</b>` : '<b class="green">✅ Sab chuka diya</b>'}</div>
+    ${c.owedBy.map(o => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line);margin-top:6px">
+      <div class="grow"><div class="ellipsis bold">${esc(o.name)}</div>
+        <div class="muted">${o.items} kharcha · kul ${rs(o.total)}${o.total - o.owed > 0.009 ? ` · diya ${rs(o.total - o.owed)}` : ''}</div></div>
+      ${o.owed > 0.009 ? `<b class="red" style="margin-right:8px">${rs(o.owed)}</b><button class="btn sm primary" data-repay="${esc(o.name)}">Paisa diya</button>`
+        : '<span class="green small">✅ Chukta</span>'}</div>`).join('')}
+  </div>`;
+}
+
+// Kisi ko paisa lautaya: pura ya thoda. Uske purane kharche pehle chukte hain.
+async function repay(name) {
+  const items = state.data.expenses.filter(e => payer(e) === name && owedOf(e) > 0)
+    .sort((a, b) => (a.spent_on || '').localeCompare(b.spent_on || '') || (a.created_at || '').localeCompare(b.created_at || ''));
+  const due = items.reduce((s, e) => s + owedOf(e), 0);
+  if (!due) return;
+  const v = prompt(`${name} ko kitna diya? (₹)\nBaaki ${rs(due)} hai. Pura diya to ${num(due)} hi rehne do.`, num(due));
+  if (v === null) return;
+  let left = num(v);
+  if (left <= 0 || left > due + 0.009) return toast(`1 se ${rs(due)} ke beech daalo`);
+  const paidNow = left;
+  try {
+    for (const e of items) {
+      if (left <= 0) break;
+      const take = Math.min(left, owedOf(e));
+      check(await db(state.code).from('hm_expenses').update({ repaid: num(num(e.repaid) + take) }).eq('id', e.id));
+      left = num(left - take);
+    }
+    toast(paidNow >= due - 0.009 ? `${name} ka pura hisaab chukta` : `${rs(paidNow)} diya, ${rs(due - paidNow)} abhi baaki`);
+    refresh();
+  } catch (err) { toast('Error: ' + err.message); refresh(); }
 }
 
 // Summary: deposit jo wapas aana baaki hai
@@ -528,7 +580,8 @@ function hisaabView(d, c) {
     <div class="card">
       <div class="row between"><span>Total kharcha</span><b>${rs(c.totalExp)}</b></div>
       <div class="row between"><span>${c.persons} members me baanta</span><b>${rs(c.perPerson)} / member</b></div>
-      <div class="row between"><span>Collector ke paas bacha</span><b class="${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</b></div>
+      <div class="row between"><span>Collector ke haath me</span><b>${rs(c.balance)}</b></div>
+      ${c.owed || c.depPending ? `<div class="row between"><span>Sab chukane ke baad bachega</span><b class="${c.finalBal < 0 ? 'red' : 'green'}">${rs(c.finalBal)}</b></div>` : ''}
     </div>
     <div class="bold" style="margin:4px 2px 8px">🤝 Kaun kisko de</div>
     ${c.settlements.length ? `<div class="list" style="margin-bottom:14px">${c.settlements.map(s => `
@@ -548,6 +601,7 @@ function bindProgram() {
   const q = $('#q');
   if (q) q.oninput = () => { state.q = q.value; renderProgram(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
   app.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { state.filter = b.dataset.f; renderProgram(); });
+  app.querySelectorAll('[data-repay]').forEach(b => b.onclick = () => repay(b.dataset.repay));
   app.querySelectorAll('[data-depback]').forEach(b => b.onclick = () => depositBack(state.data.expenses.find(e => e.id === b.dataset.depback)));
   app.querySelectorAll('[data-ev]').forEach(b => b.onclick = () => { state.ev = b.dataset.ev; renderProgram(); });
   app.querySelectorAll('[data-mid]').forEach(el => el.onclick = () => memberForm(state.data.members.find(m => m.id === el.dataset.mid)));
@@ -701,8 +755,15 @@ function expenseForm(e) {
     <label>Kis cheez ka</label><input type="text" id="eTitle" placeholder="Jaise Tent, Prasad, Petrol" value="${esc(e?.title)}">
     <label>Date</label><input type="date" id="eDate" value="${e?.spent_on || today()}">
     <div id="ePaidBox" class="${e?.is_deposit ? 'hidden' : ''}"><label>Paisa kisne diya</label>
-    <select id="ePaid"><option value="">Collection fund se (collector ne)</option>
-      ${d.members.map(m => `<option value="${m.id}" ${e?.paid_by === m.id ? 'selected' : ''}>${esc(memberLabel(p, m))} (khud ki jeb se)</option>`).join('')}</select></div>
+      <div class="seg"><button type="button" class="btn ${!payer(e || {}) ? 'primary' : ''}" data-who="fund">💰 Fund se (maine)</button>
+        <button type="button" class="btn ${payer(e || {}) ? 'primary' : ''}" data-who="other">🙋 Kisi aur ne</button></div>
+      <div id="ePayerBox" class="${payer(e || {}) ? '' : 'hidden'}">
+        <label>Kisne diya (naam / flat)</label>
+        <input type="text" id="ePayer" list="payerList" placeholder="Jaise Rameshbhai C-402" value="${esc(payer(e || {}))}">
+        <datalist id="payerList">${[...new Set([...d.expenses.map(payer).filter(Boolean), ...d.members.map(m => memberLabel(p, m))])].map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+        <p class="muted small" style="margin:6px 0 0">Ye paisa use lautana hai. Summary me "Logon ko dena baaki" me dikhega.</p>
+        ${e && payer(e) && num(e.repaid) > 0 ? `<p class="small" style="margin:6px 0 0">Ab tak diya: <b>${rs(e.repaid)}</b> · Baaki: <b class="${owedOf(e) ? 'red' : 'green'}">${rs(owedOf(e))}</b></p>` : ''}
+      </div></div>
     <label>Bill photo (optional)</label>
     ${e?.photo_url ? `<div class="row" style="margin-bottom:6px"><a href="${esc(e.photo_url)}" target="_blank" rel="noopener"><img class="thumb" src="${esc(e.photo_url)}" alt="Bill"></a>
       <label class="small" style="margin:0"><input type="checkbox" id="eRmPhoto"> Photo hatao</label></div>` : ''}
@@ -712,6 +773,13 @@ function expenseForm(e) {
       <button class="btn primary" id="eSave">Save</button>
     </div>`);
   $('#eDep').onchange = () => $('#ePaidBox').classList.toggle('hidden', $('#eDep').checked);
+  let who = payer(e || {}) ? 'other' : 'fund';
+  $('#sheet').querySelectorAll('[data-who]').forEach(b => b.onclick = () => {
+    who = b.dataset.who;
+    $('#sheet').querySelectorAll('[data-who]').forEach(x => x.classList.toggle('primary', x === b));
+    $('#ePayerBox').classList.toggle('hidden', who !== 'other');
+    if (who === 'other') $('#ePayer').focus();
+  });
   if ($('#eBack')) $('#eBack').onclick = () => depositBack(e);
   if ($('#eUnback')) $('#eUnback').onclick = async () => {
     try { check(await db(p.code).from('hm_expenses').update({ returned: null }).eq('id', e.id)); closeModal(); toast('Deposit dobara baaki me'); refresh(); }
@@ -740,7 +808,10 @@ function expenseForm(e) {
       const event = $('#eEvent').value.trim();
       state.lastEv = event;
       const is_deposit = $('#eDep').checked;
-      const row = { title, amount, event, is_deposit, spent_on: $('#eDate').value || today(), paid_by: is_deposit ? null : ($('#ePaid').value || null), photo_url };
+      const payer_name = !is_deposit && who === 'other' ? $('#ePayer').value.trim() : '';
+      if (!is_deposit && who === 'other' && !payer_name) { btn.disabled = false; btn.textContent = 'Save'; return toast('Kisne paisa diya, naam likho'); }
+      const row = { title, amount, event, is_deposit, payer_name, repaid: payer_name ? Math.min(num(e?.repaid), amount) : 0,
+        spent_on: $('#eDate').value || today(), paid_by: null, photo_url };
       if (!is_deposit) row.returned = null;
       else if (e?.returned != null && num(e.returned) > amount) row.returned = amount;
       const c = db(p.code);
@@ -777,13 +848,13 @@ function reportTables() {
       ...(p.type === 'flat' ? [['Total flats', c.n]] : []), ['Total members', c.persons], ['Total collection', num(c.collected)],
       ...(c.fixed > 0 ? [['Fixed amount / member', c.fixed], ['Expected total', num(c.expected)], ['Pending', num(c.pending)]] : []),
       ['Total kharcha', num(c.totalExp)], ...(c.depPending || c.depReturned || c.depLost ? [['Deposit wapas aana baaki', num(c.depPending)], ['Deposit wapas mila', num(c.depReturned)]] : []), ['Fund se kharcha', num(c.fundExp)], ['Members ne khud kiya', num(c.personalExp)],
-      ['Per member kharcha', num(c.perPerson)], ['Collector ke paas bacha', num(c.balance)],
+      ['Per member kharcha', num(c.perPerson)], ['Collector ke haath me', num(c.balance)], ...(c.owed ? [['Logon ko dena baaki', num(c.owed)]] : []), ['Sab chukane ke baad bachega', num(c.finalBal)],
     ],
     members: [[p.type === 'flat' ? 'Flat' : 'Naam', 'Naam', 'Members', 'Diya (₹)', 'Status'],
       ...d.members.map(m => [m.flat_no || m.name, p.type === 'flat' ? m.name : '', people(m), num(m.paid), status[memberStatus(p, m)]])],
-    expenses: [['Program', 'Date', 'Kharcha', 'Amount (₹)', 'Deposit', 'Kisne diya', 'Bill photo'],
+    expenses: [['Program', 'Date', 'Kharcha', 'Amount (₹)', 'Deposit', 'Kisne diya', 'Dena baaki (₹)', 'Bill photo'],
       ...d.expenses.map(e => [(e.event || '').trim() || 'Bina program', e.spent_on, e.title, num(e.amount),
-        isDep(e) ? (depBack(e) ? `Wapas mila ${num(e.returned)}` : 'Wapas aana baaki') : '', e.paid_by ? byId[e.paid_by] || '' : 'Fund', e.photo_url || ''])],
+        isDep(e) ? (depBack(e) ? `Wapas mila ${num(e.returned)}` : 'Wapas aana baaki') : '', payer(e) || (e.paid_by ? byId[e.paid_by] || '' : 'Fund'), num(owedOf(e)), e.photo_url || ''])],
     hisaab: [['Member', 'Log', 'Diya (₹)', 'Khud kharcha (₹)', 'Hissa (₹)', 'Lena(+)/Dena(−) (₹)'],
       ...c.rows.map(r => [r.label, r.people, num(r.paid), num(r.spent), num(r.share), num(r.net)])],
     events: [['Program', 'Kharcha (₹)', 'Per member (₹)'], ...c.events.map(ev => [ev.name, num(ev.total), num(ev.perPerson)])],
@@ -845,7 +916,7 @@ async function restoreBackup(file) {
       idMap[m.id] = nm.id;
     }
     const ex = (data.expenses || []).map(e => ({
-      program_id: prog.id, title: e.title, event: e.event || '', is_deposit: !!e.is_deposit, returned: e.returned ?? null, amount: num(e.amount), spent_on: e.spent_on || today(),
+      program_id: prog.id, title: e.title, event: e.event || '', is_deposit: !!e.is_deposit, returned: e.returned ?? null, payer_name: e.payer_name || '', repaid: num(e.repaid), amount: num(e.amount), spent_on: e.spent_on || today(),
       paid_by: e.paid_by ? idMap[e.paid_by] || null : null, photo_url: e.photo_url || null,
     }));
     if (ex.length) check(await c.from('hm_expenses').insert(ex));
