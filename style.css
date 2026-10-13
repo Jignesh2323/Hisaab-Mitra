@@ -263,3 +263,13 @@ body:has(.tabs) .toast { bottom: 160px; }
 .pop-box .actions { display: flex; gap: 10px; margin-top: 16px; }
 .pop-box .actions .btn { flex: 1; }
 .btn-danger { background: linear-gradient(135deg, #f43f5e, #e11d48); color: #fff; border-color: transparent; box-shadow: 0 3px 0 #9f1239, 0 10px 20px -6px rgba(225,29,72,.55); }
+
+/* Floor ka naam beech me, highlight */
+.floor-center { flex-direction: column; align-items: stretch; gap: 8px; padding: 14px 14px 12px; text-align: center; }
+.floor-title {
+  align-self: center; font-size: 19px; font-weight: 800; letter-spacing: .5px; color: #fff;
+  padding: 6px 22px; border-radius: 99px; background: rgba(255,255,255,.22); border: 1.5px solid rgba(255,255,255,.55);
+  box-shadow: 0 6px 16px -6px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.4) inset; text-shadow: 0 2px 6px rgba(0,0,0,.2);
+}
+.floor-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; }
+.floor-meta .floor-status { font-size: 13px; padding: 4px 10px; }

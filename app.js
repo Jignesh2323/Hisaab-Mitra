@@ -704,10 +704,12 @@ function floorGroups(d, c, list, row) {
     const due = c.fixed > 0 ? all.reduce((s, m) => s + Math.max(0, c.fixed * people(m) - num(m.paid)), 0) : 0;
     const paid = all.reduce((s, m) => s + num(m.paid), 0);
     return `<div class="floor">
-      <div class="floor-head">
-        <div class="grow"><div class="bold">${k === null ? 'Dusre flats' : `Floor ${k}`}</div>
-          <div class="muted">${all.length} flat${all.length > 1 ? 's' : ''} ·👥 ${all.reduce((s, m) => s + people(m), 0)} · Aaya ${rs(paid)}</div></div>
-        <div class="floor-status ${pendingFlats ? 'pending' : 'done'}">${pendingFlats ? `❌ ${pendingFlats} baaki${due > 0 ? `<br><span class="small">${rs(due)}</span>` : ''}` : '✅ Sab diya'}</div>
+      <div class="floor-head floor-center">
+        <div class="floor-title">🏢 ${k === null ? 'Dusre flats' : `Floor ${k}`}</div>
+        <div class="floor-meta">
+          <span class="muted">${all.length} flat${all.length > 1 ? 's' : ''} · 👥 ${all.reduce((s, m) => s + people(m), 0)} · Aaya ${rs(paid)}</span>
+          <span class="floor-status ${pendingFlats ? 'pending' : 'done'}">${pendingFlats ? `❌ ${pendingFlats} baaki${due > 0 ? ` · ${rs(due)}` : ''}` : '✅ Sab diya'}</span>
+        </div>
       </div>
       <div class="list">${shown.map(row).join('')}</div>
     </div>`;
