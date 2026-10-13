@@ -35,7 +35,7 @@ const clients = {};
 function db(code) {
   if (!clients[code]) {
     clients[code] = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-      global: { headers: { 'x-hm-code': code, 'x-hm-space': SPACE } },
+      global: { headers: { 'x-hm-code': code, 'x-hm-space': SPACE, 'x-hm-owner': OWNER_KEY } },
       auth: { persistSession: false, autoRefreshToken: false, storageKey: 'hm-' + code },
     });
   }
@@ -72,6 +72,13 @@ const spaces = {
   name(code = spaces.current) { return spaces.list().find(x => x.code === code)?.name || 'Space'; },
 };
 const SPACE = spaces.current;
+
+// Owner chaabi: is phone ki gupt key. Program banane wale ki pehchan (sirf wahi delete kar sake).
+const OWNER_KEY = (() => { let k = store.get('hm_owner_key', ''); if (!k) { k = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, ''); store.set('hm_owner_key', k); } return k; })();
+const sha256hex = async t => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t))), b => b.toString(16).padStart(2, '0')).join('');
+const myOwner = (() => { let h; return async () => h || (h = await sha256hex(OWNER_KEY)); })();
+let MY_OWNER = ''; myOwner().then(h => { MY_OWNER = h; if (state.view === 'program' && state.data) renderProgram(); });
+const isOwner = p => !!p.owner_hash && p.owner_hash === MY_OWNER;
 const spaceLink = code => `${location.origin}${location.pathname}#space=${code}`;
 function newSpaceCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -553,7 +560,7 @@ function programForm(existing) {
         closeModal(); toast('Save ho gaya'); refresh();
       } else {
         const code = newCode();
-        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, day_dates, is_private, collect_only, icon, space: SPACE }).select().single());
+        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, day_dates, is_private, collect_only, icon, space: SPACE, owner_hash: await myOwner() }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
           const srcProg = (state.programs || []).find(x => x.code === copyFrom);
@@ -685,7 +692,7 @@ function summaryView(d, c) {
       <div class="bold" style="margin-bottom:8px">⚙️ Program settings</div>
       <div class="btns">
         <button class="btn sm" id="editProg">✏️ Program edit</button>
-        <button class="btn sm danger" id="delProg">🗑️ Program delete</button>
+        ${delProgBtn(p)}
       </div>
     </div>`;
 }
@@ -831,7 +838,7 @@ function collectSummary(d, c) {
       <div class="bold" style="margin-bottom:8px">⚙️ Program settings</div>
       <div class="btns">
         <button class="btn sm" id="editProg">✏️ Program edit</button>
-        <button class="btn sm danger" id="delProg">🗑️ Program delete</button>
+        ${delProgBtn(p)}
       </div>
     </div>`;
 }
@@ -1019,6 +1026,11 @@ function bindProgram() {
     if (!await confirmBox('Program sirf is phone ki list se hatega. Online data rahega, share code se dobara khol sakte ho. Pakka?')) return;
     forgetProgram(p.code); goHome();
   });
+  on('claimOwner', async () => {
+    if (!await confirmBox('Is phone ko program ka owner bana dein? Uske baad sirf aap (ya aapka owner code) ise delete kar paoge.', { ok: 'Haan, owner bano', icon: '👑', danger: false })) return;
+    try { check(await db(p.code).from('hm_programs').update({ owner_hash: await myOwner() }).eq('id', p.id).select().single()); toast('Aap owner ban gaye 👑'); refresh(); }
+    catch (e) { toast('Nahi hua: ' + e.message); refresh(); }
+  });
   on('delProg', async () => {
     if (!await confirmBox(`"${p.name}" ka poora data (members, kharcha) sabke liye hamesha ke liye delete ho jayega. Pakka?`)) return;
     try {
@@ -1030,6 +1042,13 @@ function bindProgram() {
   on('pdfBtn', exportPdf);
   on('xlsBtn', exportExcel);
   on('bakBtn', backup);
+}
+
+// Delete sirf owner: owner na ho to taala, purane program (owner khaali) me "Owner bano"
+function delProgBtn(p) {
+  if (isOwner(p)) return '<button class="btn sm danger" id="delProg">🗑️ Program delete</button>';
+  if (!p.owner_hash) return '<button class="btn sm" id="claimOwner">👑 Is program ka owner bano</button>';
+  return '<span class="muted small">🔒 Program sirf banane wala delete kar sakta hai</span>';
 }
 
 // Stat box ke label ka emoji alag karke bada dikhao (box ke upar)
@@ -1386,7 +1405,7 @@ async function restoreBackup(file, fromHistory) {
     const code = newCode(), c = db(code);
     if (!SPACE) throw new Error('Pehle space banao');
     const prog = check(await c.from('hm_programs').insert({
-      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), day_dates: dayDates(data.program), is_private: !!data.program.is_private, collect_only: !!data.program.collect_only, space: SPACE,
+      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), day_dates: dayDates(data.program), is_private: !!data.program.is_private, collect_only: !!data.program.collect_only, space: SPACE, owner_hash: await myOwner(),
     }).select().single());
     const idMap = {};
     for (const m of data.members || []) {
@@ -1458,7 +1477,10 @@ async function openSettings() {
   const bioOk = await bioAvailable();
   const dark = document.documentElement.dataset.theme === 'dark';
   openModal(`<h2>⚙️ Settings</h2>
-    <div class="bold" style="margin-top:12px">🔒 App lock</div>
+    <div class="bold" style="margin-top:12px">👑 Owner code</div>
+    <p class="muted" style="margin:4px 0 8px">Is phone se banaye programs sirf isi code se delete hote hain. Apne dusre phone me bhi owner banna ho to ye code wahan daalo. Kisi aur ko mat dena.</p>
+    <div class="btns"><button class="btn sm" id="sOwnCopy">📋 Mera code copy karo</button><button class="btn sm" id="sOwnSet">📥 Dusre phone ka code daalo</button></div>
+    <div class="bold" style="margin-top:16px">🔒 App lock</div>
     <p class="muted">App kholte waqt PIN ya fingerprint maangega. Sirf is phone/browser par lagta hai.</p>
     ${lock.on ? `
       <div class="row between" style="padding:8px 0"><span>PIN lock</span><b class="green">On</b></div>
@@ -1490,6 +1512,14 @@ async function openSettings() {
     store.set('hm_lang', b.dataset.lang); location.reload();
   });
   on('sRestore', () => $('#restoreFile').click());
+  on('sOwnCopy', async () => { try { await navigator.clipboard.writeText(OWNER_KEY); toast('Owner code copy ho gaya'); } catch { prompt('Ye code copy karo:', OWNER_KEY); } });
+  on('sOwnSet', async () => {
+    const v = (prompt('Dusre phone ka owner code paste karo') || '').trim();
+    if (!v) return;
+    if (!/^[a-f0-9]{40,}$/i.test(v)) return toast('Ye sahi owner code nahi lagta');
+    if (!await confirmBox('Is phone ka owner code badal jayega. Is phone se pehle banaye programs ka owner code chala jayega (wo pehle dusre phone me copy kar lo). Pakka?', { ok: 'Haan, badlo', icon: '👑' })) return;
+    store.set('hm_owner_key', v); location.reload();
+  });
   on('sHistory', openHistory);
   $('#restoreFile').onchange = e => { closeModal(); restoreBackup(e.target.files[0]); };
   $('#sheet').querySelectorAll('[data-th]').forEach(b => b.onclick = () => { store.set('hm_theme', b.dataset.th); applyTheme(b.dataset.th); openSettings(); });
