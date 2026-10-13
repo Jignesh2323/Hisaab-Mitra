@@ -84,8 +84,23 @@ applyTheme(store.get('hm_theme', matchMedia('(prefers-color-scheme: dark)').matc
 $('#backBtn').onclick = () => goHome();
 
 // ---------- modal ----------
-function openModal(html) { $('#sheet').innerHTML = html; $('#modal').classList.remove('hidden'); }
-function closeModal() { $('#modal').classList.add('hidden'); $('#sheet').innerHTML = ''; }
+// Popup khulne par history me ek entry: phone ka back pehle popup band kare, phir page
+let skipPop = 0;
+function pushPopState() { history.pushState({ ...(history.state || {}), modal: (history.state?.modal || 0) + 1 }, '', location.href); }
+function popPopState() {
+  // Button se band kiya: apni history entry hatao (agar beech me koi naya page nahi khula)
+  setTimeout(() => { if (history.state?.modal) { skipPop++; history.back(); } }, 0);
+}
+function openModal(html) {
+  const wasHidden = $('#modal').classList.contains('hidden');
+  $('#sheet').innerHTML = html; $('#modal').classList.remove('hidden');
+  if (wasHidden) pushPopState();
+}
+function closeModal(fromBack) {
+  if ($('#modal').classList.contains('hidden')) return;
+  $('#modal').classList.add('hidden'); $('#sheet').innerHTML = '';
+  if (!fromBack) popPopState();
+}
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function confirmBox(msg, { ok = 'Haan, delete karo', icon = '🗑️', danger = true } = {}) {
   return new Promise(resolve => {
@@ -96,11 +111,13 @@ function confirmBox(msg, { ok = 'Haan, delete karo', icon = '🗑️', danger = 
       <p>${esc(msg)}</p>
       <div class="actions"><button class="btn" data-a="no">Nahi</button><button class="btn ${danger ? 'btn-danger' : 'primary'}" data-a="yes">${ok}</button></div>
     </div>`;
-    const done = v => { el.remove(); resolve(v); };
+    const done = (v, fromBack) => { el.remove(); el._done = null; resolve(v); if (!fromBack) popPopState(); };
+    el._done = done;
     el.onclick = e => { if (e.target === el) done(false); };
     el.querySelector('[data-a="no"]').onclick = () => done(false);
     el.querySelector('[data-a="yes"]').onclick = () => done(true);
     document.body.appendChild(el);
+    pushPopState();
   });
 }
 
@@ -474,7 +491,7 @@ const TABS = ['summary', 'members', 'expenses', 'hisaab'];
 function saveRoute(push) {
   const h = state.view === 'program' ? `#p=${state.code}&t=${state.tab}` : '';
   if (location.hash === h) return;
-  history[push ? 'pushState' : 'replaceState'](null, '', h || location.pathname + location.search);
+  history[push && !history.state?.modal ? 'pushState' : 'replaceState'](null, '', h || location.pathname + location.search);
 }
 function readRoute() {
   const r = new URLSearchParams(location.hash.slice(1));
@@ -482,6 +499,11 @@ function readRoute() {
 }
 // Phone ka back button: program se home par aao
 addEventListener('popstate', () => {
+  if (skipPop) { skipPop--; return; }
+  // Pehle sabse upar ka popup band karo
+  const pop = [...document.querySelectorAll('.pop')].pop();
+  if (pop?._done) return pop._done(false, true);
+  if (!$('#modal').classList.contains('hidden')) return closeModal(true);
   const r = readRoute();
   if (!r.code) { if (state.view !== 'home') goHome(true); }
   else if (r.code !== state.code) openProgram(r.code, null, r.tab, true);
