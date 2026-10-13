@@ -377,7 +377,7 @@ function bindProgram() {
   on('copyCode', async () => { try { await navigator.clipboard.writeText(p.code); toast('Code copy ho gaya'); } catch { toast('Code: ' + p.code); } });
   on('editProg', () => programForm(p));
   on('forgetProg', async () => {
-    if (!await confirmBox('Program sirf is phone ki list se hatega. Data online rahega, code se dobara join kar sakte ho.')) return;
+    if (!await confirmBox('Program sirf is phone ki list se hatega. Online data delete nahi hoga, lekin ye program dobara list me nahi aayega. Pakka?')) return;
     forgetProgram(p.code); goHome();
   });
   on('delProg', async () => {
