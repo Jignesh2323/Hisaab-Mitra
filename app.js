@@ -269,7 +269,7 @@ function goHome(fromHistory) {
 // Sabhi programs (sabko dikhte hain), naye pehle
 async function loadPrograms() {
   // hm_members(people): har program ke flat/member aur log ginne ke liye
-  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,icon,hm_members(people,paid)';
+  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,icon,owner_hash,hm_members(people,paid)';
   const pub = check(await db('ALL').from('hm_programs').select(cols).eq('space', SPACE).order('created_at', { ascending: false }));
   // Private program sirf unke code se milte hain jo is phone ne isi space me link se khole the
   const mine = myPrograms().filter(x => (x.private || x.joined) && (x.space || SPACE) === SPACE && !pub.some(p => p.code === x.code));
@@ -292,7 +292,10 @@ function renderHome() {
         <div><b>${all.filter(x => x.type === 'trip').length}</b>Trips</div>
         <div><b>${all.filter(x => x.type === 'flat').length}</b>Society</div></div>
     </div>
-    <button class="btn block" id="joinCode" style="margin-bottom:10px">🔑 Code se program kholo</button>
+    <div class="btns" style="margin-bottom:10px;flex-wrap:nowrap">
+      <button class="btn" id="joinCode" style="flex:1">🔑 Program code</button>
+      <button class="btn" id="ownerCodeBtn" style="flex:1">👑 Owner code daalo</button>
+    </div>
     ${all.length ? `<input type="search" class="search" id="homeSearch" placeholder="Program search karo…" value="${esc(state.homeQ)}">` : ''}
     ${list.length ? `<div class="prog-cards">${list.map(p => {
       const L = progLook(p), ms = p.hm_members || [];
@@ -315,6 +318,7 @@ function renderHome() {
   $('#newBtn').onclick = () => programForm();
   $('#spaceBtn').onclick = spaceMenu;
   $('#joinCode').onclick = joinByCode;
+  $('#ownerCodeBtn').onclick = setOwnerCode;
   const hs = $('#homeSearch');
   if (hs) hs.oninput = () => { state.homeQ = hs.value; renderHome(); const n = $('#homeSearch'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
 }
@@ -376,6 +380,25 @@ async function undelete(r) {
     check(await db('ALL').from('hm_deleted').delete().eq('id', r.id));
     if (r.kind !== 'program') openHistory();
   } catch (e) { toast('Wapas nahi aaya: ' + e.message); }
+}
+
+// Is phone ki chaabi se kin programs ka owner hai (current space me)
+function ownedNames() { return (state.programs || []).filter(x => x.owner_hash && x.owner_hash === MY_OWNER).map(x => x.name); }
+
+// Dusre phone ka owner code is phone me lagao. Pehle dikhao ki us code se kin programs ke owner banoge.
+async function setOwnerCode() {
+  const v = (prompt('Dusre phone ka owner code paste karo\n(Wahan: ⚙️ Settings → 👑 Owner code → Mera code copy karo)') || '').trim();
+  if (!v) return;
+  if (!/^[a-f0-9]{40,}$/i.test(v)) return toast('Ye sahi owner code nahi lagta');
+  if (v === OWNER_KEY) return toast('Ye isi phone ka code hai');
+  if (!state.programs) { try { await loadPrograms(); } catch {} }
+  const h = await sha256hex(v), progs = state.programs || [];
+  const gain = progs.filter(x => x.owner_hash === h).map(x => x.name);
+  const lose = progs.filter(x => x.owner_hash && x.owner_hash === MY_OWNER && x.owner_hash !== h).map(x => x.name);
+  const msg = (gain.length ? `Is code se aap in programs ke owner banoge: ${gain.join(', ')}.` : 'Is code se is space ka koi program nahi milta (dusre space ke ho sakte hain).')
+    + (lose.length ? ` ⚠️ Is phone ke purane owner programs (${lose.join(', ')}) ka owner yahan se hat jayega.` : '') + ' Code lagayein?';
+  if (!await confirmBox(msg, { ok: 'Haan, lagao', icon: '👑', danger: !!lose.length })) return;
+  store.set('hm_owner_key', v); toast('Owner code lag gaya 👑'); setTimeout(() => location.reload(), 600);
 }
 
 // Program ka 8 akshar ka code daal ke program kholo (kisi bhi space ka)
@@ -1565,11 +1588,17 @@ function askPin(title, hint) {
 }
 
 async function openSettings() {
+  if (!state.programs && SPACE) { try { await loadPrograms(); } catch {} }
   const bioOk = await bioAvailable();
   const dark = document.documentElement.dataset.theme === 'dark';
   openModal(`<h2>⚙️ Settings</h2>
     <div class="bold" style="margin-top:12px">👑 Owner code</div>
-    <p class="muted" style="margin:4px 0 8px">Is phone se banaye programs sirf isi code se delete hote hain. Apne dusre phone me bhi owner banna ho to ye code wahan daalo. Kisi aur ko mat dena.</p>
+    <p class="muted" style="margin:4px 0 6px">Ye code <b>is phone ka</b> hai, har program ka alag nahi. Is phone se aap jitne program ke owner bane ho, sab isi ek code se chalte hain. Kisi aur ko mat dena.</p>
+    <div class="card" style="margin:0 0 8px;padding:10px">
+      <div class="row between"><span class="muted">Code ki jhalak</span><b class="code" style="font-size:14px;letter-spacing:1px">${OWNER_KEY.slice(0, 4)}…${OWNER_KEY.slice(-4)}</b></div>
+      <div class="muted" style="margin-top:6px">Aap in programs ke owner ho:</div>
+      <div class="small" style="margin-top:2px" data-notr>${ownedNames().map(n => `👑 ${esc(n)}`).join('<br>') || '<span class="muted">Is space me abhi koi nahi</span>'}</div>
+    </div>
     <div class="btns"><button class="btn sm" id="sOwnCopy">📋 Mera code copy karo</button><button class="btn sm" id="sOwnSet">📥 Dusre phone ka code daalo</button></div>
     <div class="bold" style="margin-top:16px">🔒 App lock</div>
     <p class="muted">App kholte waqt PIN ya fingerprint maangega. Sirf is phone/browser par lagta hai.</p>
@@ -1604,13 +1633,7 @@ async function openSettings() {
   });
   on('sRestore', () => $('#restoreFile').click());
   on('sOwnCopy', async () => { try { await navigator.clipboard.writeText(OWNER_KEY); toast('Owner code copy ho gaya'); } catch { prompt('Ye code copy karo:', OWNER_KEY); } });
-  on('sOwnSet', async () => {
-    const v = (prompt('Dusre phone ka owner code paste karo') || '').trim();
-    if (!v) return;
-    if (!/^[a-f0-9]{40,}$/i.test(v)) return toast('Ye sahi owner code nahi lagta');
-    if (!await confirmBox('Is phone ka owner code badal jayega. Is phone se pehle banaye programs ka owner code chala jayega (wo pehle dusre phone me copy kar lo). Pakka?', { ok: 'Haan, badlo', icon: '👑' })) return;
-    store.set('hm_owner_key', v); location.reload();
-  });
+  on('sOwnSet', () => { closeModal(); setOwnerCode(); });
   on('sHistory', openHistory);
   $('#restoreFile').onchange = e => { closeModal(); restoreBackup(e.target.files[0]); };
   $('#sheet').querySelectorAll('[data-th]').forEach(b => b.onclick = () => { store.set('hm_theme', b.dataset.th); applyTheme(b.dataset.th); openSettings(); });

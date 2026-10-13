@@ -409,4 +409,10 @@ const I18N_DICT = [
   ['Payment jodo', 'Add payment', 'पेमेंट जोड़ें', 'પેમેન્ટ ઉમેરો'],
   ['Kitna diya, wo daalo', 'Enter the amount paid', 'कितना दिया, वह डालें', 'કેટલા આપ્યા તે નાખો'],
   ['Ab tak diya', 'Paid so far', 'अब तक दिया', 'અત્યાર સુધી આપ્યા'],
+  ['Owner code daalo', 'Enter owner code', 'ओनर कोड डालें', 'ઓનર કોડ નાખો'],
+  ['Code ki jhalak', 'Code preview', 'कोड की झलक', 'કોડની ઝલક'],
+  ['Aap in programs ke owner ho:', 'You own these programs:', 'आप इन प्रोग्राम के ओनर हैं:', 'તમે આ પ્રોગ્રામના ઓનર છો:'],
+  ['Is space me abhi koi nahi', 'None in this space yet', 'इस स्पेस में अभी कोई नहीं', 'આ સ્પેસમાં હજુ કોઈ નહીં'],
+  ['Owner code lag gaya', 'Owner code applied', 'ओनर कोड लग गया', 'ઓનર કોડ લાગી ગયો'],
+  ['Haan, lagao', 'Yes, apply', 'हाँ, लगाएं', 'હા, લગાવો'],
 ];
