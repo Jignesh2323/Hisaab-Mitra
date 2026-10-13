@@ -431,4 +431,5 @@ const I18N_DICT = [
   [' de diye', ' given', ' दे दिए', ' આપી દીધા'],
   ['Sabko mila', 'All received', 'सबको मिला', 'બધાને મળ્યું'],
   ['kul ', 'total ', 'कुल ', 'કુલ '],
+  ['Dash ki jagah space bhi chalega:', 'Space works instead of dash:', 'डैश की जगह स्पेस भी चलेगा:', 'ડેશની જગ્યાએ સ્પેસ પણ ચાલશે:'],
 ];

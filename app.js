@@ -1237,6 +1237,10 @@ function memberForm(m) {
     catch (e) { toast('Error: ' + e.message); }
   });
   $('#mSave').onclick = async () => {
+    if (isFlat) {
+      const sp = splitSpaced($('#mFlat').value);
+      if (sp) { $('#mFlat').value = sp.flat; if (sp.count && $('#mPeople')) $('#mPeople').value = sp.count; }
+    }
     const row = { name: $('#mName').value.trim(), flat_no: isFlat ? $('#mFlat').value.trim() : '', paid: num($('#mPaid').value),
       people: isFlat || isTrip(p) ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1 };
     if (passOn(p)) row.passes = Math.max(0, parseInt($('#mPass').value) || 0);
@@ -1258,10 +1262,21 @@ function memberForm(m) {
 const flatKey = f => String(f || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const COMPACT =/^(.*\d.*?)\s*-\s*(\d{1,2})$/;
 
+// "C 203 4" / "c203" / "C 203" -> flat "C-203" aur (agar likha ho) members 4. Dash ke liye keyboard na badalna pade.
+function splitSpaced(x) {
+  const t = String(x || '').trim();
+  let m = t.match(/^([A-Za-z]{1,3})[\s.]*-?\s*(\d{2,5})(?:\s+(\d{1,2}))?$/);
+  if (m) return { flat: `${m[1].toUpperCase()}-${m[2]}`, count: m[3] ? Math.max(1, +m[3]) : 0 };
+  m = t.match(/^(\d{2,5})\s+(\d{1,2})$/);
+  if (m) return { flat: m[1], count: Math.max(1, +m[2]) };
+  return null;
+}
+
 function parseBulk(text, isFlat, withCount) {
   const out = [];
   for (const line of text.split('\n').map(l => l.trim()).filter(Boolean)) {
-    const parts = line.split(',').map(x => x.trim()).filter(Boolean);
+    let parts = line.split(',').map(x => x.trim()).filter(Boolean);
+    if (isFlat) parts = parts.map(x => { const sp = splitSpaced(x); return sp ? (sp.count ? `${sp.flat}-${sp.count}` : sp.flat) : x; });
     if (!isFlat && withCount) {
       // "Rahul & Neha, 2" -> naam, log
       let count = parts.length > 1 && /^\d+$/.test(parts[parts.length - 1]) ? Math.max(1, parseInt(parts.pop())) : 1;
@@ -1315,7 +1330,7 @@ function roundForm() {
 function bulkForm() {
   const p = state.data.program, isFlat = p.type === 'flat';
   openModal(`<h2>Ek saath add karo</h2>
-    <p class="muted">${isFlat ? 'Har line me ek flat: <b>Flat, Naam, Kitne member</b>, jaise <b>A-101, Sharma ji, 4</b>.<br>Ya ek hi line me comma se: <b>C-202-2, C-402-3, C-602-4</b> (aakhri number = members).' : isTrip(p) ? 'Har line me ek couple / group: <b>Naam, Kitne log</b>, jaise <b>Rahul &amp; Neha, 2</b>.' : 'Har line me ek naam, ya comma se alag karke.'}</p>
+    <p class="muted">${isFlat ? 'Har line me ek flat: <b>Flat, Naam, Kitne member</b>, jaise <b>A-101, Sharma ji, 4</b>.<br>Ya ek hi line me comma se: <b>C-202-2, C-402-3, C-602-4</b> (aakhri number = members). Dash ki jagah space bhi chalega: <b>C 202 2</b>.' : isTrip(p) ? 'Har line me ek couple / group: <b>Naam, Kitne log</b>, jaise <b>Rahul &amp; Neha, 2</b>.' : 'Har line me ek naam, ya comma se alag karke.'}</p>
     <textarea id="bulk" rows="8" placeholder="${isFlat ? 'C-202-2, C-402-3, C-602-4\nya\nA-101, Sharma ji, 4' : isTrip(p) ? 'Rahul & Neha, 2\nAmit & Pooja, 2\nSandeep, 1' : 'Rahul\nAmit\nPriya'}"></textarea>
     <div id="bPrev" class="muted" style="margin-top:8px"></div>
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="bSave">Add karo</button></div>`);
