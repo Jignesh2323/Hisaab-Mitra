@@ -653,16 +653,15 @@ function summaryView(d, c) {
           <div class="muted">${[c.owed ? `${rs(c.owed)} logon ko dena baaki` : '', c.depPending ? `${rs(c.depPending)} deposit aana baaki` : ''].filter(Boolean).join(' · ')}</div>`
         : `<div class="muted">${c.balance < 0 ? 'Collection se zyada kharcha ho gaya' : 'Collection − kharcha'}</div>`}
         ${isGroup(p) && c.n ? `<button class="btn sm ${c.balance <= 0 ? 'primary' : ''}" id="roundBtn2" style="margin-top:8px">💰 Collection lo${c.balance <= 0 && c.totalExp ? ' (fund khatam)' : ''}</button>` : ''}</div>
-      <div class="stat"><div class="label">💵 Total collection</div><div class="value">${rs(c.collected)}</div></div>
-      <div class="stat"><div class="label">🧾 Total kharcha</div><div class="value">${rs(c.totalExp)}</div></div>
-      ${p.type === 'flat' ? `
-      <div class="stat"><div class="label">🏢 Total flats</div><div class="value">${c.n}</div></div>
-      <div class="stat"><div class="label">👥 Total members</div><div class="value">${c.persons}</div></div>` : `
-      <div class="stat"><div class="label">👥 Total members</div><div class="value">${c.n}</div></div>`}
-      <div class="stat"><div class="label">🙋 Per member kharcha</div><div class="value">${rs(c.perPerson)}</div></div>
+      ${statGrid([
+        ['💵 Total collection', rs(c.collected)],
+        ['🧾 Total kharcha', rs(c.totalExp)],
+        c.fixed > 0 ? ['🎯 Fixed / member', rs(c.fixed)] : ['✅ Diya', c.counts.ok],
+        p.type === 'flat' ? ['🏢 Total flats', c.n] : ['👥 Total members', c.n],
+        p.type === 'flat' ? ['👥 Total members', c.persons] : ['🧑 Total log', c.persons],
+        ['🙋 Per member kharcha', rs(c.perPerson)],
+      ])}
       ${c.fixed > 0 ? `
-      <div class="stat"><div class="label">🎯 Fixed / member</div><div class="value">${rs(c.fixed)}</div></div>
-      <div class="stat"><div class="label">📈 Expected total</div><div class="value">${rs(c.expected)}</div></div>
       <div class="stat wide" style="--g:linear-gradient(135deg,#f59e0b,#ef4444);--glow:rgba(239,68,68,.5)"><div class="label">⏳ Abhi baaki (pending)</div><div class="value amber">${rs(c.pending)}</div></div>` : ''}
     </div>
     ${owedCard(c)}
@@ -783,8 +782,7 @@ function expensesView(d, c) {
     (!q || e.title.toLowerCase().includes(q) || evName(e).toLowerCase().includes(q) || (byId[e.paid_by] || '').toLowerCase().includes(q) || payer(e).toLowerCase().includes(q)));
   return `
     <div class="stats">
-      <div class="stat"><div class="label">🧾 Total kharcha</div><div class="value">${rs(c.totalExp)}</div></div>
-      <div class="stat"><div class="label">💰 Haath me</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div></div>
+      ${statGrid([['🧾 Total kharcha', rs(c.totalExp)], ['💰 Haath me', `<span class="${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</span>`], ['🙋 Per member', rs(c.perPerson)]])}
     </div>
     <input type="search" class="search" id="q" placeholder="Kharcha search…" value="${esc(state.q)}">
     ${multiDay(p) ? `<div class="chips">
@@ -810,16 +808,14 @@ function collectSummary(d, c) {
     <div class="stats">
       <div class="stat wide"><div class="label">💵 Kul collection aaya</div><div class="value">${rs(c.collected)}</div>
         <div class="muted">${paidUnits.length} ${flat ? 'flat' : 'member'}${flat ? ` (${paidPeople} log)` : ''} ne diya${c.fixed > 0 ? ` · ${rs(c.pending)} abhi baaki` : ''}</div></div>
-      ${flat ? `
-      <div class="stat"><div class="label">🏢 Total flats</div><div class="value">${c.n}</div></div>
-      <div class="stat"><div class="label">👥 Total members</div><div class="value">${c.persons}</div></div>` : `
-      <div class="stat"><div class="label">👥 Total members</div><div class="value">${c.n}</div></div>`}
-      <div class="stat"><div class="label">✅ Diya</div><div class="value">${c.counts.ok}${c.counts.part ? ` <span class="small">+ ${c.counts.part} thoda</span>` : ''}</div></div>
-      <div class="stat"><div class="label">❌ Nahi diya</div><div class="value">${c.counts.no}</div></div>
-      ${c.fixed > 0 ? `
-      <div class="stat"><div class="label">🎯 Fixed / member</div><div class="value">${rs(c.fixed)}</div></div>
-      <div class="stat"><div class="label">📈 Expected total</div><div class="value">${rs(c.expected)}</div></div>
-      <div class="stat wide" style="--g:linear-gradient(135deg,#f59e0b,#ef4444);--glow:rgba(239,68,68,.5)"><div class="label">⏳ Abhi baaki (pending)</div><div class="value">${rs(c.pending)}</div></div>` : ''}
+      ${statGrid([
+        flat ? ['🏢 Total flats', c.n] : ['👥 Total members', c.n],
+        flat ? ['👥 Total members', c.persons] : ['🧑 Total log', c.persons],
+        c.fixed > 0 ? ['🎯 Fixed / member', rs(c.fixed)] : null,
+        ['✅ Diya', `${c.counts.ok}${c.counts.part ? ` <span class="small">+${c.counts.part}</span>` : ''}`],
+        ['❌ Nahi diya', c.counts.no],
+        c.fixed > 0 ? ['⏳ Baaki', rs(c.pending)] : null,
+      ])}
     </div>
     <div class="card">
       <div class="bold" style="margin-bottom:8px">📤 Export / Backup</div>
@@ -1042,6 +1038,16 @@ function bindProgram() {
   on('pdfBtn', exportPdf);
   on('xlsBtn', exportExcel);
   on('bakBtn', backup);
+}
+
+// Stat box 3-3 ki line me. Aakhri line adhoori ho to aakhri box(es) chaude, taaki beech me khaali jagah na rahe.
+function statGrid(items) {
+  const list = items.filter(Boolean), rem = list.length % 3;
+  return list.map(([l, v], i) => {
+    let span = '';
+    if (rem && i === list.length - 1) span = ` style="grid-column: span ${rem === 1 ? 3 : 2}"`;
+    return `<div class="stat"${span}><div class="label">${l}</div><div class="value">${v}</div></div>`;
+  }).join('');
 }
 
 // Delete sirf owner: owner na ho to taala, purane program (owner khaali) me "Owner bano"

@@ -393,4 +393,5 @@ const I18N_DICT = [
   ['Mera code copy karo', 'Copy my code', 'मेरा कोड कॉपी करें', 'મારો કોડ કૉપી કરો'],
   ['Dusre phone ka code daalo', 'Enter other phone\'s code', 'दूसरे फ़ोन का कोड डालें', 'બીજા ફોનનો કોડ નાખો'],
   ['Owner code copy ho gaya', 'Owner code copied', 'ओनर कोड कॉपी हो गया', 'ઓનર કોડ કૉપી થયો'],
+  ['Total log', 'Total people', 'कुल लोग', 'કુલ લોકો'],
 ];
