@@ -58,7 +58,7 @@ const forgetProgram = code => store.set('hm_programs', myPrograms().filter(x => 
 // ---------- theme ----------
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
-  document.querySelector('meta[name=theme-color]').content = t === 'dark' ? '#0b2b27' : '#0f766e';
+  document.querySelector('meta[name=theme-color]').content = t === 'dark' ? '#1e1b4b' : '#5b4cf0';
 }
 applyTheme(store.get('hm_theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 $('#backBtn').onclick = () => goHome();
@@ -87,6 +87,9 @@ async function loadProgram(code) {
 
 // ---------- calculations ----------
 const people = m => Math.max(1, parseInt(m.people) || 1);
+// Jitne log, utne chehre (zyada ho to aage +N)
+const FACES = ['👨', '👩', '👦', '👧', '👴', '👵'];
+const faces = n => `<span class="faces" title="${n} log">${FACES.concat(FACES).slice(0, Math.min(n, 8)).join('')}${n > 8 ? `<small>+${n - 8}</small>` : ''}</span> <b class="small">${n}</b>`;
 function memberLabel(prog, m) {
   if (prog.type === 'flat') return [m.flat_no, m.name].filter(Boolean).join(' · ') || 'Flat';
   return m.name || m.flat_no || 'Member';
@@ -198,13 +201,20 @@ function renderHome() {
   const all = state.programs || [];
   const list = all.filter(p => !q || p.name.toLowerCase().includes(q));
   app.innerHTML = `
+    <div class="home-hero">
+      <h2>🙏 Namaste!</h2>
+      <p>Collection, kharcha aur hisaab, sab ek jagah.</p>
+      <div class="hero-num"><div><b>${all.length}</b>Programs</div>
+        <div><b>${all.filter(x => x.type === 'trip').length}</b>Trips</div>
+        <div><b>${all.filter(x => x.type === 'flat').length}</b>Society</div></div>
+    </div>
     <div class="btns" style="margin-bottom:12px">
       <button class="btn" id="restoreBtn">📂 Backup restore</button>
     </div>
     ${all.length ? `<input type="search" class="search" id="homeSearch" placeholder="Program search karo…" value="${esc(state.homeQ)}">` : ''}
     ${list.length ? `<div class="list">${list.map(p => `
       <div class="item" data-code="${esc(p.code)}">
-        <div class="badge ok">${TYPE_LABEL[p.type]?.split(' ')[0] || '👥'}</div>
+        <div class="badge prog-badge type-${p.type}">${TYPE_LABEL[p.type]?.split(' ')[0] || '👥'}</div>
         <div class="grow"><div class="bold ellipsis">${p.is_private ? '🔒 ' : ''}${esc(p.name)}</div>
           <div class="muted">${(TYPE_LABEL[p.type] || '').replace(/^\S+ /, '')}${daysOf(p) > 1 ? ` · ${daysOf(p)} din` : ''} · ${new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div></div>
         <div class="muted">›</div>
@@ -341,7 +351,7 @@ function renderProgram() {
   state.programs = null;
   const d = state.data, p = d.program, c = calc(d);
   $('#title').textContent = p.name;
-  const tabs = [['summary', 'Summary'], ['members', p.type === 'flat' ? 'Flats' : 'Members'], ['expenses', 'Kharcha'], ['hisaab', 'Hisaab']];
+  const tabs = [['summary', '📊 Summary'], ['members', p.type === 'flat' ? '🏢 Flats' : '👥 Members'], ['expenses', '🧾 Kharcha'], ['hisaab', '🤝 Hisaab']];
   let body = '';
   if (state.tab === 'summary') body = summaryView(d, c);
   if (state.tab === 'members') body = membersView(d, c);
@@ -367,17 +377,17 @@ function summaryView(d, c) {
           <div class="muted">${[c.owed ? `${rs(c.owed)} logon ko dena baaki` : '', c.depPending ? `${rs(c.depPending)} deposit aana baaki` : ''].filter(Boolean).join(' · ')}</div>`
         : `<div class="muted">${c.balance < 0 ? 'Collection se zyada kharcha ho gaya' : 'Collection − kharcha'}</div>`}
         ${isGroup(p) && c.n ? `<button class="btn sm ${c.balance <= 0 ? 'primary' : ''}" id="roundBtn2" style="margin-top:8px">💰 Collection lo${c.balance <= 0 && c.totalExp ? ' (fund khatam)' : ''}</button>` : ''}</div>
-      <div class="stat"><div class="label">Total collection</div><div class="value">${rs(c.collected)}</div></div>
-      <div class="stat"><div class="label">Total kharcha</div><div class="value">${rs(c.totalExp)}</div></div>
+      <div class="stat"><div class="label">💵 Total collection</div><div class="value">${rs(c.collected)}</div></div>
+      <div class="stat"><div class="label">🧾 Total kharcha</div><div class="value">${rs(c.totalExp)}</div></div>
       ${p.type === 'flat' ? `
-      <div class="stat"><div class="label">Total flats</div><div class="value">${c.n}</div></div>
-      <div class="stat"><div class="label">Total members</div><div class="value">${c.persons}</div></div>` : `
-      <div class="stat"><div class="label">Total members</div><div class="value">${c.n}</div></div>`}
-      <div class="stat"><div class="label">Per member kharcha</div><div class="value">${rs(c.perPerson)}</div></div>
+      <div class="stat"><div class="label">🏢 Total flats</div><div class="value">${c.n}</div></div>
+      <div class="stat"><div class="label">👥 Total members</div><div class="value">${c.persons}</div></div>` : `
+      <div class="stat"><div class="label">👥 Total members</div><div class="value">${c.n}</div></div>`}
+      <div class="stat"><div class="label">🙋 Per member kharcha</div><div class="value">${rs(c.perPerson)}</div></div>
       ${c.fixed > 0 ? `
-      <div class="stat"><div class="label">Fixed amount / member</div><div class="value">${rs(c.fixed)}</div></div>
-      <div class="stat"><div class="label">Expected total</div><div class="value">${rs(c.expected)}</div></div>
-      <div class="stat wide" style="background:transparent;border-color:var(--line)"><div class="label">⏳ Abhi baaki (pending)</div><div class="value amber">${rs(c.pending)}</div></div>` : ''}
+      <div class="stat"><div class="label">🎯 Fixed / member</div><div class="value">${rs(c.fixed)}</div></div>
+      <div class="stat"><div class="label">📈 Expected total</div><div class="value">${rs(c.expected)}</div></div>
+      <div class="stat wide" style="--g:linear-gradient(135deg,#f59e0b,#ef4444);--glow:rgba(239,68,68,.5)"><div class="label">⏳ Abhi baaki (pending)</div><div class="value amber">${rs(c.pending)}</div></div>` : ''}
     </div>
     ${owedCard(c)}
     ${depositCard(d, c)}
@@ -390,7 +400,7 @@ function summaryView(d, c) {
       ${c.personalExp > 0 ? `<div class="muted" style="margin-top:8px">Fund se kharcha ${rs(c.fundExp)} · Members ne khud kiya ${rs(c.personalExp)}</div>` : ''}
     </div>
     <div class="card">
-      <div class="bold" style="margin-bottom:8px">Export / Backup</div>
+      <div class="bold" style="margin-bottom:8px">📤 Export / Backup</div>
       <div class="btns">
         <button class="btn sm" id="pdfBtn">🖨️ PDF</button>
         <button class="btn sm" id="xlsBtn">📊 Excel</button>
@@ -403,7 +413,7 @@ function summaryView(d, c) {
       <button class="btn primary block" id="shareLink">🔗 Link share karo</button>
     </div>` : ''}
     <div class="card">
-      <div class="bold" style="margin-bottom:8px">Settings</div>
+      <div class="bold" style="margin-bottom:8px">⚙️ Program settings</div>
       <div class="btns">
         <button class="btn sm" id="editProg">✏️ Program edit</button>
         <button class="btn sm danger" id="delProg">🗑️ Program delete</button>
@@ -434,13 +444,13 @@ function membersView(d, c) {
 
   function row(m) {
     const st = memberStatus(p, m), due = c.fixed > 0 ? Math.max(0, c.fixed * people(m) - num(m.paid)) : 0;
-    const info = [p.type === 'flat' ? `👥 ${people(m)}` : '', due > 0 ? `${rs(due)} baaki` : ''].filter(Boolean).join(' · ');
+    const info = [p.type === 'flat' ? faces(people(m)) : '', due > 0 ? `${rs(due)} baaki` : ''].filter(Boolean).join(' · ');
     if (isGroup(p)) {
       const r = c.rows.find(x => x.id === m.id);
       return `<div class="item" data-mid="${m.id}">
         <div class="badge ${Math.abs(r.net) < 0.01 ? 'ok' : 'part'}">${Math.abs(r.net) < 0.01 ? '✅' : '🧾'}</div>
         <div class="grow"><div class="bold ellipsis">${esc(r.label)}</div>
-          <div class="muted">${isTrip(p) ? `👥 ${r.people} · ` : ''}${r.paid ? `Collection ${rs(r.paid)} · ` : ''}Kharcha ${rs(r.spent)} · Hissa ${rs(r.share)}</div></div>
+          <div class="muted">${isTrip(p) ? `${faces(r.people)} · ` : ''}${r.paid ? `Collection ${rs(r.paid)} · ` : ''}Kharcha ${rs(r.spent)} · Hissa ${rs(r.share)}</div></div>
         <div class="amt ${r.net > 0.009 ? 'green' : r.net < -0.009 ? 'red' : ''}">${r.net > 0.009 ? 'Dena ' + rs(r.net) : r.net < -0.009 ? 'Lena ' + rs(-r.net) : 'Barabar'}</div>
       </div>`;
     }
@@ -495,8 +505,8 @@ function expensesView(d, c) {
     (!q || e.title.toLowerCase().includes(q) || evName(e).toLowerCase().includes(q) || (byId[e.paid_by] || '').toLowerCase().includes(q) || payer(e).toLowerCase().includes(q)));
   return `
     <div class="stats">
-      <div class="stat"><div class="label">Total kharcha</div><div class="value">${rs(c.totalExp)}</div></div>
-      <div class="stat"><div class="label">Collector ke haath me</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div></div>
+      <div class="stat"><div class="label">🧾 Total kharcha</div><div class="value">${rs(c.totalExp)}</div></div>
+      <div class="stat"><div class="label">💰 Haath me</div><div class="value ${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</div></div>
     </div>
     <input type="search" class="search" id="q" placeholder="Kharcha search…" value="${esc(state.q)}">
     ${multiDay(p) ? `<div class="chips">
@@ -619,7 +629,7 @@ function friendsSettle(d, c) {
     <p class="muted small" style="margin:4px 0 8px">Har vyakti ka hissa ${rs(c.perPerson)}${isTrip(state.data.program) ? ' (couple ka double)' : ''}. Jisne kam kharcha kiya usse paisa lo, jisne zyada kiya use wapas do.</p>
     ${c.rows.map(r => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line)">
       <div class="grow"><div class="bold ellipsis">${esc(r.label)}</div>
-        <div class="muted">${isTrip(state.data.program) ? `👥 ${r.people} · ` : ''}Kharcha ${rs(r.spent)} · Hissa ${rs(r.share)}${r.paid ? ` · ${r.paid > 0 ? 'Diya' : 'Wapas mila'} ${rs(Math.abs(r.paid))}` : ''}</div></div>
+        <div class="muted">${isTrip(state.data.program) ? `${faces(r.people)} · ` : ''}Kharcha ${rs(r.spent)} · Hissa ${rs(r.share)}${r.paid ? ` · ${r.paid > 0 ? 'Diya' : 'Wapas mila'} ${rs(Math.abs(r.paid))}` : ''}</div></div>
       ${r.net < -0.009 ? `<b class="red" style="margin-right:8px">${rs(-r.net)} lena</b><button class="btn sm primary" data-settle="${r.id}">Le liya</button>`
         : r.net > 0.009 ? `<b class="green" style="margin-right:8px">${rs(r.net)} dena</b><button class="btn sm primary" data-settle="${r.id}">De diya</button>`
         : '<span class="green small">✅ Barabar</span>'}</div>`).join('')}
@@ -662,7 +672,7 @@ function hisaabView(d, c) {
     <div class="list">${c.rows.map(r => `
       <div class="item" style="cursor:default">
         <div class="grow"><div class="bold ellipsis">${esc(r.label)}</div>
-          <div class="muted">${p.type === 'flat' ? `👥 ${r.people} · ` : ''}Diya ${rs(r.paid)}${r.spent ? ` + kharcha ${rs(r.spent)}` : ''} · Hissa ${rs(r.share)}</div></div>
+          <div class="muted">${p.type === 'flat' ? `${faces(r.people)} · ` : ''}Diya ${rs(r.paid)}${r.spent ? ` + kharcha ${rs(r.spent)}` : ''} · Hissa ${rs(r.share)}</div></div>
         <div class="amt ${r.net > 0.009 ? 'green' : r.net < -0.009 ? 'red' : ''}">${r.net > 0.009 ? 'Lena ' + rs(r.net) : r.net < -0.009 ? 'Dena ' + rs(-r.net) : 'Barabar'}</div>
       </div>`).join('')}</div>`}`;
 }
@@ -792,7 +802,7 @@ function roundForm() {
     <p class="muted">Har vyakti se kitna lena hai? Couple se apne aap double. Kisi ka alag ho to neeche badal do.</p>
     <label>Har vyakti se (₹)</label><input type="number" id="rPer" inputmode="decimal" min="0" value="${last}" placeholder="Jaise 2000">
     <div class="list" style="margin-top:10px">${d.members.map(m => `<div class="item" style="cursor:default">
-      <div class="grow"><div class="bold ellipsis">${esc(memberLabel(p, m))}</div><div class="muted">👥 ${people(m)} · ab tak ${rs(m.paid)}</div></div>
+      <div class="grow"><div class="bold ellipsis">${esc(memberLabel(p, m))}</div><div class="muted">${faces(people(m))} · ab tak ${rs(m.paid)}</div></div>
       <input type="number" inputmode="decimal" min="0" data-rm="${m.id}" data-ppl="${people(m)}" style="width:110px;text-align:right" placeholder="0"></div>`).join('')}</div>
     <div class="muted" id="rTot" style="margin-top:8px"></div>
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="rSave">Save</button></div>`);
