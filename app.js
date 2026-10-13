@@ -292,10 +292,7 @@ function renderHome() {
         <div><b>${all.filter(x => x.type === 'trip').length}</b>Trips</div>
         <div><b>${all.filter(x => x.type === 'flat').length}</b>Society</div></div>
     </div>
-    <div class="btns" style="margin-bottom:10px;flex-wrap:nowrap">
-      <button class="btn" id="joinCode" style="flex:1">🔑 Program code</button>
-      <button class="btn" id="ownerCodeBtn" style="flex:1">👑 Owner code daalo</button>
-    </div>
+    <button class="btn block" id="joinCode" style="margin-bottom:10px">🔑 Program code se kholo</button>
     ${all.length ? `<input type="search" class="search" id="homeSearch" placeholder="Program search karo…" value="${esc(state.homeQ)}">` : ''}
     ${list.length ? `<div class="prog-cards">${list.map(p => {
       const L = progLook(p), ms = p.hm_members || [];
@@ -318,7 +315,6 @@ function renderHome() {
   $('#newBtn').onclick = () => programForm();
   $('#spaceBtn').onclick = spaceMenu;
   $('#joinCode').onclick = joinByCode;
-  $('#ownerCodeBtn').onclick = setOwnerCode;
   const hs = $('#homeSearch');
   if (hs) hs.oninput = () => { state.homeQ = hs.value; renderHome(); const n = $('#homeSearch'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
 }

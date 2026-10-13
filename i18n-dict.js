@@ -415,4 +415,5 @@ const I18N_DICT = [
   ['Is space me abhi koi nahi', 'None in this space yet', 'इस स्पेस में अभी कोई नहीं', 'આ સ્પેસમાં હજુ કોઈ નહીં'],
   ['Owner code lag gaya', 'Owner code applied', 'ओनर कोड लग गया', 'ઓનર કોડ લાગી ગયો'],
   ['Haan, lagao', 'Yes, apply', 'हाँ, लगाएं', 'હા, લગાવો'],
+  ['Program code se kholo', 'Open with program code', 'प्रोग्राम कोड से खोलें', 'પ્રોગ્રામ કોડથી ખોલો'],
 ];
