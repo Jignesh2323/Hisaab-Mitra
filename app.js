@@ -12,7 +12,11 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const num = v => Math.round((Number(v) || 0) * 100) / 100;
 const rs = v => '₹' + num(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
-const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+// Date hamesha DD/MM/YY (jaise 15/10/26)
+const pad2 = n => String(n).padStart(2, '0');
+const fmtDT = dt => `${pad2(dt.getDate())}/${pad2(dt.getMonth() + 1)}/${String(dt.getFullYear()).slice(-2)}`;
+const fmtDate = d => d ? fmtDT(new Date(String(d).slice(0, 10) + 'T00:00:00')) : '';
+const fmtDM = d => d ? fmtDate(d).slice(0, 5) : '';
 
 function toast(msg) {
   const t = $('#toast');
@@ -269,7 +273,7 @@ function renderHome() {
         <div class="badge prog-badge type-${p.type}">${TYPE_LABEL[p.type]?.split(' ')[0] || '👥'}</div>
         <div class="grow"><div class="bold ellipsis">${p.is_private ? '🔒 ' : ''}${p.collect_only ? '💵 ' : ''}${esc(p.name)}</div>
           ${p.hm_members ? `<div class="small" style="margin:2px 0"><b>${p.type === 'flat' ? `🏢 ${p.hm_members.length} flats · ` : ''}👥 ${p.hm_members.reduce((t, m) => t + people(m), 0)} members</b></div>` : ''}
-          <div class="muted">${(TYPE_LABEL[p.type] || '').replace(/^\S+ /, '')}${daysOf(p) > 1 ? ` · ${daysOf(p)} din` : ''} · ${new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div></div>
+          <div class="muted">${(TYPE_LABEL[p.type] || '').replace(/^\S+ /, '')}${daysOf(p) > 1 ? ` · ${daysOf(p)} din` : ''} · ${fmtDT(new Date(p.created_at))}</div></div>
         <div class="muted">›</div>
       </div>`).join('')}</div>`
       : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Neeche ＋ dabake naya program banao.</p>`}</div>`}
@@ -300,7 +304,7 @@ async function openHistory() {
   try { rows = check(await db('ALL').from('hm_deleted').select('*').order('deleted_at', { ascending: false }).limit(200)); }
   catch (e) { return openModal(`<h2>🗑️ Delete history</h2><p class="red">${esc(e.message)}</p><div class="actions"><button class="btn block" onclick="closeModal()">Band karo</button></div>`); }
   const icon = { program: '📁', member: '🏠', expense: '🧾' }, what = { program: 'Program', member: 'Flat / member', expense: 'Kharcha' };
-  const when = d => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const when = d => { const dt = new Date(d); return `${fmtDT(dt)} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`; };
   openModal(`<h2>🗑️ Delete history</h2>
     <p class="muted">"<span data-notr>${esc(spaces.name())}</span>" space me delete hui entries. <b>Wapas lao</b> se dobara aa jayegi.</p>
     ${rows.length ? `<div class="list" style="margin-top:10px">${rows.map(r => `<div class="item" style="cursor:default">
@@ -422,6 +426,11 @@ function dayForToday(p, t = today()) {
   for (let i = 0; i < names.length; i++) if (dd[i] && dd[i] >= t) return names[i];
   let last = null; names.forEach((n, i) => { if (dd[i]) last = n; });
   return last;
+}
+// "Din 1" ke saath us din ki date: "Din 1 · 11/10"
+function dayLabel(p, name) {
+  const i = dayNames(p).indexOf(name), d = i >= 0 ? dayDates(p)[i] : '';
+  return d ? `${name} · ${fmtDM(d)}` : name;
 }
 const multiDay = p => daysOf(p) > 1 || (p.id && state.data?.program?.id === p.id && state.data.expenses.some(e => (e.event || '').trim()));
 
@@ -719,7 +728,7 @@ function expensesView(d, c) {
     <input type="search" class="search" id="q" placeholder="Kharcha search…" value="${esc(state.q)}">
     ${multiDay(p) ? `<div class="chips">
       <button class="chip ${!state.ev ? 'active' : ''}" data-ev="">Sab</button>
-      ${c.events.map(ev => `<button class="chip ${state.ev === ev.name ? 'active' : ''}" data-ev="${esc(ev.name)}">${esc(ev.name)}</button>`).join('')}
+      ${c.events.map(ev => `<button class="chip ${state.ev === ev.name ? 'active' : ''}" data-ev="${esc(ev.name)}">${esc(dayLabel(p, ev.name))}</button>`).join('')}
     </div>` : ''}
     ${list.length ? eventGroups(c, list, e => `
       <div class="item" data-eid="${e.id}">
@@ -819,7 +828,7 @@ function depositCard(d, c) {
     <div class="row between"><div class="bold">🔁 Deposit</div>
       ${open.length ? `<b class="amber">${rs(c.depPending)} wapas aana baaki</b>` : '<b class="green">✅ Sab wapas mil gaya</b>'}</div>
     ${open.map(e => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line);margin-top:6px">
-      <div class="grow"><div class="ellipsis" data-notr>${esc(e.title)}</div><div class="muted">${(e.event || '').trim() ? esc(e.event) + ' · ' : ''}${fmtDate(e.spent_on)}</div></div>
+      <div class="grow"><div class="ellipsis" data-notr>${esc(e.title)}</div><div class="muted">${(e.event || '').trim() ? esc(dayLabel(d.program, e.event)) + ' · ' : ''}${fmtDate(e.spent_on)}</div></div>
       <b style="margin-right:8px">${rs(e.amount)}</b><button class="btn sm primary" data-depback="${e.id}">Mil gaya</button></div>`).join('')}
     ${c.depReturned || c.depLost ? `<div class="muted" style="margin-top:8px">Wapas mila ${rs(c.depReturned)}${c.depLost ? ` · Kata (kharche me juda) ${rs(c.depLost)}` : ''}</div>` : ''}
   </div>`;
@@ -847,7 +856,7 @@ function eventCard(c) {
     <div class="bold" style="margin-bottom:8px">🎉 Program-wise kharcha</div>
     <div class="row between muted small" style="margin-bottom:4px"><span class="grow">Program</span><span style="width:90px;text-align:right">Kharcha</span><span style="width:90px;text-align:right">Per member</span></div>
     ${c.events.map(ev => `<div class="row between" style="padding:5px 0;border-top:1px solid var(--line)">
-      <span class="grow ellipsis">${esc(ev.name)}</span><b style="width:90px;text-align:right">${rs(ev.total)}</b><span style="width:90px;text-align:right">${rs(ev.perPerson)}</span></div>`).join('')}
+      <span class="grow ellipsis">${esc(dayLabel(state.data.program, ev.name))}</span><b style="width:90px;text-align:right">${rs(ev.total)}</b><span style="width:90px;text-align:right">${rs(ev.perPerson)}</span></div>`).join('')}
     <div class="row between bold" style="padding:6px 0 0;border-top:2px solid var(--line)">
       <span class="grow">Total</span><span style="width:90px;text-align:right">${rs(c.totalExp)}</span><span style="width:90px;text-align:right">${rs(c.perPerson)}</span></div>
     <div class="muted" style="margin-top:6px">Per member = program ka kharcha ÷ ${c.persons} members</div>
@@ -864,7 +873,7 @@ function eventGroups(c, list, row) {
   return order.map(k => {
     const ev = c.events.find(x => x.name === k);
     return `<div class="floor">
-      <div class="floor-head"><div class="grow"><div class="bold">${esc(k)}</div><div class="muted">${groups.get(k).length} entry · Per member ${rs(ev.perPerson)}</div></div>
+      <div class="floor-head"><div class="grow"><div class="bold">${esc(dayLabel(state.data.program, k))}</div><div class="muted">${groups.get(k).length} entry · Per member ${rs(ev.perPerson)}</div></div>
         <div class="floor-status">${rs(ev.total)}</div></div>
       <div class="list">${groups.get(k).map(row).join('')}</div>
     </div>`;
@@ -1125,7 +1134,7 @@ function expenseForm(e) {
       const evs = [...new Set([...dayNames(p), ...d.expenses.map(x => (x.event || '').trim()).filter(Boolean)])];
       const cur = e ? (e.event || '') : (dayForToday(p) || (state.lastEv && evs.includes(state.lastEv) ? state.lastEv : evs[0]));
       return `<label>Kis din / program ka</label>
-        <div class="chips" style="margin-bottom:0">${evs.map(x => `<button type="button" class="chip ${x === cur ? 'active' : ''}" data-pick="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+        <div class="chips" style="margin-bottom:0">${evs.map(x => `<button type="button" class="chip ${x === cur ? 'active' : ''}" data-pick="${esc(x)}">${esc(dayLabel(p, x))}</button>`).join('')}</div>
         <input type="hidden" id="eEvent" value="${esc(cur)}">`;
     })() : `<input type="hidden" id="eEvent" value="${esc(e?.event || '')}">`}
     <label>Amount (₹)</label><input type="number" id="eAmt" inputmode="decimal" min="0" value="${e ? num(e.amount) : ''}">
@@ -1268,7 +1277,7 @@ function reportTables() {
 function exportPdf() {
   const t = reportTables();
   const table = rows => `<table><thead><tr>${rows[0].map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.slice(1).map(r => `<tr>${r.map(v => `<td>${esc(typeof v === 'number' ? rs(v) : (String(v).startsWith('http') ? 'Haan' : v))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-  $('#printArea').innerHTML = `<h1>${esc(t.p.name)}</h1><div>HisaabMitra · ${new Date().toLocaleDateString('en-IN')}</div>
+  $('#printArea').innerHTML = `<h1>${esc(t.p.name)}</h1><div>HisaabMitra · ${fmtDT(new Date())}</div>
     <h2>Summary</h2><table><tbody>${t.summary.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(typeof v === 'number' && !['Total members', 'Total flats'].includes(k) ? rs(v) : v)}</td></tr>`).join('')}</tbody></table>
     <h2>Collection</h2>${table(t.members)}
     ${multiDay(t.p) ? `<h2>Program-wise kharcha</h2>${table(t.events)}` : ''}
