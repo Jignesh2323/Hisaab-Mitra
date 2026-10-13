@@ -50,7 +50,7 @@ const store = {
 const myPrograms = () => store.get('hm_programs', []);
 function saveMyProgram(p) {
   const list = myPrograms().filter(x => x.code !== p.code);
-  list.unshift({ code: p.code, name: p.name, type: p.type });
+  list.unshift({ code: p.code, name: p.name, type: p.type, private: !!p.is_private });
   store.set('hm_programs', list);
 }
 const forgetProgram = code => store.set('hm_programs', myPrograms().filter(x => x.code !== code));
@@ -183,7 +183,13 @@ function goHome(fromHistory) {
 
 // Sabhi programs (sabko dikhte hain), naye pehle
 async function loadPrograms() {
-  state.programs = check(await db('ALL').from('hm_programs').select('id,code,name,type,days,created_at').order('created_at', { ascending: false }));
+  const cols = 'id,code,name,type,days,created_at,is_private';
+  const pub = check(await db('ALL').from('hm_programs').select(cols).order('created_at', { ascending: false }));
+  // Private program sirf unke code se milte hain jo is phone ne link se khole the
+  const mine = myPrograms().filter(x => x.private && !pub.some(p => p.code === x.code));
+  const priv = (await Promise.all(mine.map(x => db(x.code).from('hm_programs').select(cols).eq('code', x.code).maybeSingle()
+    .then(r => { if (!r.error && !r.data) forgetProgram(x.code); return r.data; }).catch(() => null)))).filter(Boolean);
+  state.programs = [...priv, ...pub].sort((a, b) => b.created_at.localeCompare(a.created_at));
   return state.programs;
 }
 
@@ -199,7 +205,7 @@ function renderHome() {
     ${list.length ? `<div class="list">${list.map(p => `
       <div class="item" data-code="${esc(p.code)}">
         <div class="badge ok">${TYPE_LABEL[p.type]?.split(' ')[0] || '👥'}</div>
-        <div class="grow"><div class="bold ellipsis">${esc(p.name)}</div>
+        <div class="grow"><div class="bold ellipsis">${p.is_private ? '🔒 ' : ''}${esc(p.name)}</div>
           <div class="muted">${(TYPE_LABEL[p.type] || '').replace(/^\S+ /, '')}${daysOf(p) > 1 ? ` · ${daysOf(p)} din` : ''} · ${new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div></div>
         <div class="muted">›</div>
       </div>`).join('')}</div>`
@@ -238,6 +244,9 @@ function programForm(existing) {
     <div class="seg"><button class="btn ${!multiDay(p) ? 'primary' : ''}" data-d="1">🎯 Ek program</button><button class="btn ${multiDay(p) ? 'primary' : ''}" data-d="many">📅 Kai din ka</button></div>
     <div id="pDaysBox" class="${multiDay(p) ? '' : 'hidden'}"><label>Kitne din / program?</label>
       <input type="number" id="pDays" inputmode="numeric" min="2" max="31" step="1" value="${daysOf(p) > 1 ? daysOf(p) : 4}"></div>
+    <label class="row" style="gap:8px;color:var(--text);margin-top:14px"><input type="checkbox" id="pPrivate" ${p.is_private ?? (p.type === 'trip') ? 'checked' : ''} style="width:20px;height:20px">
+      🔒 Private: sirf link walon ko dikhe</label>
+    <p class="muted small" style="margin:2px 0 0">Private program kisi ki list me nahi aata. Summary se link bhejo, jo kholega usi ko dikhega.</p>
     <label>Fixed amount har member (₹) <span class="muted">— nahi hai to 0 rakho</span></label>
     <input type="number" id="pFixed" inputmode="decimal" min="0" value="${num(p.fixed_amount) || ''}" placeholder="0">
     ${!existing && others.length ? `<label>Pichhle program se member list copy karo (optional)</label>
@@ -257,6 +266,7 @@ function programForm(existing) {
     type = b.dataset.t;
     $('#sheet').querySelectorAll('[data-t]').forEach(x => x.classList.toggle('primary', x === b));
     hint();
+    if (!existing) $('#pPrivate').checked = type === 'trip';
   });
   if (!existing) $('#pName').focus();
   $('#pSave').onclick = async () => {
@@ -264,15 +274,16 @@ function programForm(existing) {
     if (!name) return toast('Program ka naam daalo');
     const fixed_amount = num($('#pFixed').value);
     const days = many ? Math.min(31, Math.max(2, parseInt($('#pDays').value) || 2)) : 1;
+    const is_private = $('#pPrivate').checked;
     $('#pSave').disabled = true;
     try {
       if (existing) {
-        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days }).eq('id', existing.id).select().single());
-        saveMyProgram({ ...existing, name, type });
+        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, is_private }).eq('id', existing.id).select().single());
+        saveMyProgram({ ...existing, name, type, is_private });
         closeModal(); toast('Save ho gaya'); refresh();
       } else {
         const code = newCode();
-        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days }).select().single());
+        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, is_private }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
           const srcProg = (state.programs || []).find(x => x.code === copyFrom);
@@ -386,6 +397,11 @@ function summaryView(d, c) {
         <button class="btn sm" id="bakBtn">💾 Backup</button>
       </div>
     </div>
+    ${p.is_private ? `<div class="card">
+      <div class="bold">🔒 Private program</div>
+      <p class="muted" style="margin:4px 0 8px">Sirf jinke paas link hai unhe dikhta hai. Ye link trip walon ko bhejo.</p>
+      <button class="btn primary block" id="shareLink">🔗 Link share karo</button>
+    </div>` : ''}
     <div class="card">
       <div class="bold" style="margin-bottom:8px">Settings</div>
       <div class="btns">
@@ -668,6 +684,14 @@ function bindProgram() {
   on('roundBtn2', roundForm);
   on('copyCode', async () => { try { await navigator.clipboard.writeText(p.code); toast('Code copy ho gaya'); } catch { toast('Code: ' + p.code); } });
   on('editProg', () => programForm(p));
+  on('shareLink', async () => {
+    const url = `${location.origin}${location.pathname}#p=${p.code}`;
+    const text = `${p.name} ka hisaab HisaabMitra me dekho:`;
+    try {
+      if (navigator.share) await navigator.share({ title: p.name, text, url });
+      else { await navigator.clipboard.writeText(`${text} ${url}`); toast('Link copy ho gaya, WhatsApp par bhej do'); }
+    } catch (e) { if (e.name !== 'AbortError') { try { await navigator.clipboard.writeText(url); toast('Link copy ho gaya'); } catch { prompt('Ye link copy karo:', url); } } }
+  });
   on('forgetProg', async () => {
     if (!await confirmBox('Program sirf is phone ki list se hatega. Online data rahega, share code se dobara khol sakte ho. Pakka?')) return;
     forgetProgram(p.code); goHome();
@@ -1015,7 +1039,7 @@ async function restoreBackup(file) {
     if (data.app !== 'HisaabMitra' || !data.program) throw new Error('Ye HisaabMitra ki backup file nahi hai');
     const code = newCode(), c = db(code);
     const prog = check(await c.from('hm_programs').insert({
-      code, name: data.program.name + ' (restore)', type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program),
+      code, name: data.program.name + ' (restore)', type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), is_private: !!data.program.is_private,
     }).select().single());
     const idMap = {};
     for (const m of data.members || []) {
