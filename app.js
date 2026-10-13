@@ -83,7 +83,10 @@ async function loadProgram(code) {
   ]);
   const program = check(p);
   if (!program) return null;
-  return { program, members: check(m), expenses: check(e) };
+  const members = check(m);
+  // Flats hamesha number ke kram me: C-202, C-402, ..., C-1004 (1004 ko 202 se pehle nahi rakhna)
+  if (program.type === 'flat') members.sort((a, b) => (a.flat_no || '').localeCompare(b.flat_no || '', 'en', { numeric: true, sensitivity: 'base' }));
+  return { program, members, expenses: check(e) };
 }
 
 // ---------- calculations ----------
@@ -434,6 +437,8 @@ function memberForm(m) {
     const row = { name: $('#mName').value.trim(), flat_no: isFlat ? $('#mFlat').value.trim() : '', paid: num($('#mPaid').value),
       people: isFlat ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1 };
     if (!row.name && !row.flat_no) return toast(isFlat ? 'Flat number daalo' : 'Naam daalo');
+    if (isFlat && row.flat_no && state.data.members.some(x => x.id !== m?.id && flatKey(x.flat_no) === flatKey(row.flat_no)))
+      return toast(`Flat ${row.flat_no} is program me pehle se hai`);
     $('#mSave').disabled = true;
     try {
       const c = db(p.code);
@@ -445,7 +450,9 @@ function memberForm(m) {
 }
 
 // "C-202-2" jaisa likha ho to flat C-202 aur 2 member. Flat number me koi digit hona zaroori hai.
-const COMPACT = /^(.*\d.*?)\s*-\s*(\d{1,2})$/;
+// "c-202", "C 202", "C202" aur "C-202" ek hi flat maane jayenge
+const flatKey = f => String(f || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const COMPACT =/^(.*\d.*?)\s*-\s*(\d{1,2})$/;
 
 function parseBulk(text, isFlat) {
   const out = [];
@@ -476,17 +483,31 @@ function bulkForm() {
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="bSave">Add karo</button></div>`);
   const preview = () => {
     const rows = parseBulk($('#bulk').value, isFlat);
+    const { fresh, dups } = splitDups(rows);
     if (!rows.length) return $('#bPrev').innerHTML = '';
-    const total = rows.reduce((s, r) => s + r.people, 0);
-    $('#bPrev').innerHTML = `<b>${rows.length} ${isFlat ? 'flats' : 'members'}${isFlat ? `, ${total} members` : ''}</b> add honge:<br>` +
-      rows.map(r => esc(isFlat ? `${r.flat_no}${r.name ? ' (' + r.name + ')' : ''} 👥${r.people}` : r.name)).join(' · ');
+    const total = fresh.reduce((s, r) => s + r.people, 0);
+    $('#bPrev').innerHTML = (fresh.length ? `<b>${fresh.length} ${isFlat ? 'flats' : 'members'}${isFlat ? `, ${total} members` : ''}</b> add honge:<br>` +
+      fresh.map(r => esc(isFlat ? `${r.flat_no}${r.name ? ' (' + r.name + ')' : ''} 👥${r.people}` : r.name)).join(' · ') : '') +
+      (dups.length ? `<div class="red" style="margin-top:6px">⚠️ Repeat flat, add nahi honge: ${esc(dups.join(', '))}</div>` : '');
+  };
+  // Flat number program me pehle se ho, ya list me do baar likha ho, to use chhod do
+  const splitDups = rows => {
+    if (!isFlat) return { fresh: rows, dups: [] };
+    const seen = new Set(state.data.members.map(m => flatKey(m.flat_no)));
+    const fresh = [], dups = [];
+    rows.forEach(r => { const k = flatKey(r.flat_no); if (seen.has(k)) dups.push(r.flat_no); else { seen.add(k); fresh.push(r); } });
+    return { fresh, dups };
   };
   $('#bulk').oninput = preview;
   $('#bSave').onclick = async () => {
-    const rows = parseBulk($('#bulk').value, isFlat).map(r => ({ ...r, program_id: p.id, paid: 0 }));
-    if (!rows.length) return toast('Kuchh likho');
+    const { fresh, dups } = splitDups(parseBulk($('#bulk').value, isFlat));
+    const rows = fresh.map(r => ({ ...r, program_id: p.id, paid: 0 }));
+    if (!rows.length) return toast(dups.length ? 'Ye sab flats pehle se hain' : 'Kuchh likho');
     $('#bSave').disabled = true;
-    try { check(await db(p.code).from('hm_members').insert(rows)); closeModal(); toast(`${rows.length} add ho gaye`); refresh(); }
+    try {
+      check(await db(p.code).from('hm_members').insert(rows)); closeModal();
+      toast(`${rows.length} add ho gaye${dups.length ? `, ${dups.length} repeat chhod diye` : ''}`); refresh();
+    }
     catch (e) { $('#bSave').disabled = false; toast('Error: ' + e.message); }
   };
 }
