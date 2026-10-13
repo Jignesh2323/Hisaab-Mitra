@@ -359,7 +359,7 @@ function summaryView(d, c) {
     ${owedCard(c)}
     ${depositCard(d, c)}
     ${eventCard(c)}
-    <div class="card">
+    <div class="card ${p.type === 'friends' && !c.fixed ? 'hidden' : ''}">
       <div class="bold" style="margin-bottom:6px">Payment status</div>
       <div class="row between small"><span>✅ Pura diya</span><b>${c.counts.ok}</b></div>
       ${c.fixed > 0 ? `<div class="row between small"><span>🟡 Thoda diya</span><b>${c.counts.part}</b></div>` : ''}
@@ -406,6 +406,15 @@ function membersView(d, c) {
   function row(m) {
     const st = memberStatus(p, m), due = c.fixed > 0 ? Math.max(0, c.fixed * people(m) - num(m.paid)) : 0;
     const info = [p.type === 'flat' ? `👥 ${people(m)}` : '', due > 0 ? `${rs(due)} baaki` : ''].filter(Boolean).join(' · ');
+    if (p.type === 'friends') {
+      const r = c.rows.find(x => x.id === m.id);
+      return `<div class="item" data-mid="${m.id}">
+        <div class="badge ${Math.abs(r.net) < 0.01 ? 'ok' : 'part'}">${Math.abs(r.net) < 0.01 ? '✅' : '🧾'}</div>
+        <div class="grow"><div class="bold ellipsis">${esc(r.label)}</div>
+          <div class="muted">Kharcha ${rs(r.spent)} · Hissa ${rs(r.share)}</div></div>
+        <div class="amt ${r.net > 0.009 ? 'green' : r.net < -0.009 ? 'red' : ''}">${r.net > 0.009 ? 'Dena ' + rs(r.net) : r.net < -0.009 ? 'Lena ' + rs(-r.net) : 'Barabar'}</div>
+      </div>`;
+    }
     return `<div class="item" data-mid="${m.id}">
       <div class="badge ${st}">${icon[st]}</div>
       <div class="grow"><div class="bold ellipsis">${esc(memberLabel(p, m))}</div>
@@ -573,6 +582,38 @@ function eventGroups(c, list, row) {
   }).join('');
 }
 
+// Friends: sabse hissa lo, jisne zyada kharcha kiya use wapas do
+function friendsSettle(d, c) {
+  const left = c.rows.filter(r => Math.abs(r.net) > 0.009).length;
+  return `<div class="card">
+    <div class="bold">💰 Collection aur wapsi</div>
+    <p class="muted small" style="margin:4px 0 8px">Har dost ka hissa ${rs(c.perPerson)}. Jisne kam kharcha kiya usse paisa lo, jisne zyada kiya use wapas do.</p>
+    ${c.rows.map(r => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line)">
+      <div class="grow"><div class="bold ellipsis">${esc(r.label)}</div>
+        <div class="muted">Kharcha ${rs(r.spent)} · Hissa ${rs(r.share)}${r.paid ? ` · ${r.paid > 0 ? 'Diya' : 'Wapas mila'} ${rs(Math.abs(r.paid))}` : ''}</div></div>
+      ${r.net < -0.009 ? `<b class="red" style="margin-right:8px">${rs(-r.net)} lena</b><button class="btn sm primary" data-settle="${r.id}">Le liya</button>`
+        : r.net > 0.009 ? `<b class="green" style="margin-right:8px">${rs(r.net)} dena</b><button class="btn sm primary" data-settle="${r.id}">De diya</button>`
+        : '<span class="green small">✅ Barabar</span>'}</div>`).join('')}
+    <div class="muted" style="margin-top:8px">${left ? `${left} dost ka hisaab baaki · Abhi haath me ${rs(c.balance)}` : '🎉 Sabka hisaab ho gaya'}</div>
+  </div>`;
+}
+
+// Le liya: dost ne collection me diya. De diya: dost ko wapas diya (minus me likha jata hai)
+async function friendSettle(id) {
+  const c = calc(state.data), r = c.rows.find(x => x.id === id), m = state.data.members.find(x => x.id === id);
+  if (!r || Math.abs(r.net) < 0.01) return;
+  const due = Math.abs(r.net), take = r.net < 0;
+  const v = prompt(`${r.label} ${take ? 'se kitna liya' : 'ko kitna diya'}? (₹)`, num(due));
+  if (v === null) return;
+  const amt = num(v);
+  if (amt <= 0 || amt > due + 0.009) return toast(`1 se ${rs(due)} ke beech daalo`);
+  try {
+    check(await db(state.code).from('hm_members').update({ paid: num(num(m.paid) + (take ? amt : -amt)) }).eq('id', id));
+    toast(amt >= due - 0.009 ? `${r.label} ka hisaab barabar` : `${rs(due - amt)} abhi baaki`);
+    refresh();
+  } catch (err) { toast('Error: ' + err.message); }
+}
+
 function hisaabView(d, c) {
   const p = d.program, unit = p.type === 'flat' ? 'flat' : 'member';
   if (!c.n) return `<div class="card empty">Pehle ${unit}s add karo.</div>`;
@@ -583,17 +624,18 @@ function hisaabView(d, c) {
       <div class="row between"><span>Collector ke haath me</span><b>${rs(c.balance)}</b></div>
       ${c.owed || c.depPending ? `<div class="row between"><span>Sab chukane ke baad bachega</span><b class="${c.finalBal < 0 ? 'red' : 'green'}">${rs(c.finalBal)}</b></div>` : ''}
     </div>
-    <div class="bold" style="margin:4px 2px 8px">🤝 Kaun kisko de</div>
+    ${p.type === 'friends' ? friendsSettle(d, c) : ''}
+    <div class="bold" style="margin:4px 2px 8px">🤝 ${p.type === 'friends' ? 'Ya seedha aapas me: kaun kisko de' : 'Kaun kisko de'}</div>
     ${c.settlements.length ? `<div class="list" style="margin-bottom:14px">${c.settlements.map(s => `
       <div class="settle"><div class="grow"><b>${esc(s.from)}</b> <span class="muted">➜</span> <b>${esc(s.to)}</b></div><div class="amt">${rs(s.amt)}</div></div>`).join('')}</div>`
       : `<div class="card empty" style="padding:16px">Sab barabar hai, kisi ko kuchh nahi dena 🎉</div>`}
-    <div class="bold" style="margin:4px 2px 8px">Har ${unit} ka hisaab</div>
+    ${p.type === 'friends' ? '' : `<div class="bold" style="margin:4px 2px 8px">Har ${unit} ka hisaab</div>
     <div class="list">${c.rows.map(r => `
       <div class="item" style="cursor:default">
         <div class="grow"><div class="bold ellipsis">${esc(r.label)}</div>
           <div class="muted">${p.type === 'flat' ? `👥 ${r.people} · ` : ''}Diya ${rs(r.paid)}${r.spent ? ` + kharcha ${rs(r.spent)}` : ''} · Hissa ${rs(r.share)}</div></div>
         <div class="amt ${r.net > 0.009 ? 'green' : r.net < -0.009 ? 'red' : ''}">${r.net > 0.009 ? 'Lena ' + rs(r.net) : r.net < -0.009 ? 'Dena ' + rs(-r.net) : 'Barabar'}</div>
-      </div>`).join('')}</div>`;
+      </div>`).join('')}</div>`}`;
 }
 
 function bindProgram() {
@@ -601,6 +643,7 @@ function bindProgram() {
   const q = $('#q');
   if (q) q.oninput = () => { state.q = q.value; renderProgram(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
   app.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { state.filter = b.dataset.f; renderProgram(); });
+  app.querySelectorAll('[data-settle]').forEach(b => b.onclick = () => friendSettle(b.dataset.settle));
   app.querySelectorAll('[data-repay]').forEach(b => b.onclick = () => repay(b.dataset.repay));
   app.querySelectorAll('[data-depback]').forEach(b => b.onclick = () => depositBack(state.data.expenses.find(e => e.id === b.dataset.depback)));
   app.querySelectorAll('[data-ev]').forEach(b => b.onclick = () => { state.ev = b.dataset.ev; renderProgram(); });
@@ -633,7 +676,7 @@ function memberForm(m) {
     <label>${isFlat ? 'Naam (optional)' : 'Naam'}</label><input type="text" id="mName" value="${esc(m?.name)}">
     ${isFlat ? `<label>Kitne member (log)</label><input type="number" id="mPeople" inputmode="numeric" min="1" step="1" value="${m ? people(m) : 1}">` : ''}
     <label>Kitna diya (₹)</label>
-    <input type="number" id="mPaid" inputmode="decimal" min="0" value="${m ? num(m.paid) || '' : ''}" placeholder="0">
+    <input type="number" id="mPaid" inputmode="decimal" ${isFlat ? 'min="0"' : ''} value="${m ? num(m.paid) || '' : ''}" placeholder="0">
     <div class="btns" style="margin-top:8px">
       ${fixed > 0 ? `<button class="btn sm" id="mFull">Pura amount</button>` : ''}
       ${m ? `<button class="btn sm" id="mAdd">＋ Aur payment jodo</button>` : ''}
@@ -754,6 +797,15 @@ function expenseForm(e) {
       : `<div class="row between"><span class="amber">Wapas aana baaki</span><button type="button" class="btn sm primary" id="eBack">✅ Mil gaya</button></div>`}</div>` : ''}
     <label>Kis cheez ka</label><input type="text" id="eTitle" placeholder="Jaise Tent, Prasad, Petrol" value="${esc(e?.title)}">
     <label>Date</label><input type="date" id="eDate" value="${e?.spent_on || today()}">
+    ${p.type === 'friends' ? (() => {
+      // Friends: jo dost ne kharida, uska naam chuno (baad me hisaab me uska kharcha judta hai)
+      const cur = e ? (e.paid_by || '') : (state.lastPayer ?? (d.members[0]?.id || ''));
+      return `<div id="ePaidBox" class="${e?.is_deposit ? 'hidden' : ''}"><label>Kisne kharcha kiya (paisa kisne diya)</label>
+        <div class="chips" style="margin-bottom:0">${d.members.map(m => `<button type="button" class="chip ${cur === m.id ? 'active' : ''}" data-buyer="${m.id}">${esc(memberLabel(p, m))}</button>`).join('')}
+          <button type="button" class="chip ${cur === '' ? 'active' : ''}" data-buyer="">💰 Collection se</button></div>
+        <input type="hidden" id="eBuyer" value="${cur}">
+        ${d.members.length ? '' : '<p class="muted small">Pehle Members tab me dost add karo.</p>'}</div>`;
+    })() : `
     <div id="ePaidBox" class="${e?.is_deposit ? 'hidden' : ''}"><label>Paisa kisne diya</label>
       <div class="seg"><button type="button" class="btn ${!payer(e || {}) ? 'primary' : ''}" data-who="fund">💰 Fund se (maine)</button>
         <button type="button" class="btn ${payer(e || {}) ? 'primary' : ''}" data-who="other">🙋 Kisi aur ne</button></div>
@@ -763,7 +815,7 @@ function expenseForm(e) {
         <datalist id="payerList">${[...new Set([...d.expenses.map(payer).filter(Boolean), ...d.members.map(m => memberLabel(p, m))])].map(x => `<option value="${esc(x)}">`).join('')}</datalist>
         <p class="muted small" style="margin:6px 0 0">Ye paisa use lautana hai. Summary me "Logon ko dena baaki" me dikhega.</p>
         ${e && payer(e) && num(e.repaid) > 0 ? `<p class="small" style="margin:6px 0 0">Ab tak diya: <b>${rs(e.repaid)}</b> · Baaki: <b class="${owedOf(e) ? 'red' : 'green'}">${rs(owedOf(e))}</b></p>` : ''}
-      </div></div>
+      </div></div>`}
     <label>Bill photo (optional)</label>
     ${e?.photo_url ? `<div class="row" style="margin-bottom:6px"><a href="${esc(e.photo_url)}" target="_blank" rel="noopener"><img class="thumb" src="${esc(e.photo_url)}" alt="Bill"></a>
       <label class="small" style="margin:0"><input type="checkbox" id="eRmPhoto"> Photo hatao</label></div>` : ''}
@@ -774,6 +826,10 @@ function expenseForm(e) {
     </div>`);
   $('#eDep').onchange = () => $('#ePaidBox').classList.toggle('hidden', $('#eDep').checked);
   let who = payer(e || {}) ? 'other' : 'fund';
+  $('#sheet').querySelectorAll('[data-buyer]').forEach(b => b.onclick = () => {
+    $('#eBuyer').value = b.dataset.buyer;
+    $('#sheet').querySelectorAll('[data-buyer]').forEach(x => x.classList.toggle('active', x === b));
+  });
   $('#sheet').querySelectorAll('[data-who]').forEach(b => b.onclick = () => {
     who = b.dataset.who;
     $('#sheet').querySelectorAll('[data-who]').forEach(x => x.classList.toggle('primary', x === b));
@@ -810,8 +866,10 @@ function expenseForm(e) {
       const is_deposit = $('#eDep').checked;
       const payer_name = !is_deposit && who === 'other' ? $('#ePayer').value.trim() : '';
       if (!is_deposit && who === 'other' && !payer_name) { btn.disabled = false; btn.textContent = 'Save'; return toast('Kisne paisa diya, naam likho'); }
+      const buyer = p.type === 'friends' && !is_deposit ? ($('#eBuyer').value || null) : null;
+      if (p.type === 'friends') state.lastPayer = $('#eBuyer')?.value ?? '';
       const row = { title, amount, event, is_deposit, payer_name, repaid: payer_name ? Math.min(num(e?.repaid), amount) : 0,
-        spent_on: $('#eDate').value || today(), paid_by: null, photo_url };
+        spent_on: $('#eDate').value || today(), paid_by: buyer, photo_url };
       if (!is_deposit) row.returned = null;
       else if (e?.returned != null && num(e.returned) > amount) row.returned = amount;
       const c = db(p.code);
