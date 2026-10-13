@@ -87,12 +87,13 @@ async function loadProgram(code) {
 }
 
 // ---------- calculations ----------
+const people = m => Math.max(1, parseInt(m.people) || 1);
 function memberLabel(prog, m) {
   if (prog.type === 'flat') return [m.flat_no, m.name].filter(Boolean).join(' · ') || 'Flat';
   return m.name || m.flat_no || 'Member';
 }
 function memberStatus(prog, m) {
-  const paid = num(m.paid), fixed = num(prog.fixed_amount);
+  const paid = num(m.paid), fixed = num(prog.fixed_amount) * people(m);
   if (fixed > 0) return paid >= fixed ? 'ok' : paid > 0 ? 'part' : 'no';
   return paid > 0 ? 'ok' : 'no';
 }
@@ -104,17 +105,20 @@ function calc(d) {
   const personalExp = expenses.filter(e => e.paid_by).reduce((s, e) => s + num(e.amount), 0);
   const totalExp = fundExp + personalExp;
   const balance = collected - fundExp;
-  const share = n ? totalExp / n : 0;
+  // Kharcha logon ki ginti se baanta jata hai: per member hissa x us flat ke log
+  const persons = members.reduce((s, m) => s + people(m), 0);
+  const perPerson = persons ? totalExp / persons : 0;
   const fixed = num(p.fixed_amount);
-  const expected = fixed * n;
-  const pending = fixed > 0 ? members.reduce((s, m) => s + Math.max(0, fixed - num(m.paid)), 0) : 0;
+  const expected = fixed * persons;
+  const pending = fixed > 0 ? members.reduce((s, m) => s + Math.max(0, fixed * people(m) - num(m.paid)), 0) : 0;
   const counts = { ok: 0, part: 0, no: 0 };
   members.forEach(m => counts[memberStatus(p, m)]++);
 
   // Har member ka hisaab: diya (fund me + khud kharcha kiya) - uska hissa
   const rows = members.map(m => {
     const spent = expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + num(e.amount), 0);
-    return { id: m.id, label: memberLabel(p, m), paid: num(m.paid), spent, share, net: num(m.paid) + spent - share };
+    const mine = perPerson * people(m);
+    return { id: m.id, label: memberLabel(p, m), people: people(m), paid: num(m.paid), spent, share: mine, net: num(m.paid) + spent - mine };
   });
 
   // Settlement: collector (fund) bhi ek participant hai jiske paas balance pada hai
@@ -131,7 +135,7 @@ function calc(d) {
     if (debtors[i].amt < 0.01) i++;
     if (creditors[j].amt < 0.01) j++;
   }
-  return { n, collected, fundExp, personalExp, totalExp, balance, share, fixed, expected, pending, counts, rows, settlements };
+  return { n, persons, perPerson, collected, fundExp, personalExp, totalExp, balance, fixed, expected, pending, counts, rows, settlements };
 }
 
 // ---------- HOME ----------
@@ -176,7 +180,7 @@ function programForm(existing) {
     <label>Program ka naam</label><input type="text" id="pName" placeholder="Jaise Ganpati Utsav 2026" value="${esc(p.name)}">
     <label>Type</label>
     <div class="seg"><button class="btn ${p.type === 'flat' ? 'primary' : ''}" data-t="flat">🏢 Society / Flat</button><button class="btn ${p.type === 'friends' ? 'primary' : ''}" data-t="friends">👥 Friends</button></div>
-    <label>Fixed amount har member/flat (₹) <span class="muted">— nahi hai to 0 rakho</span></label>
+    <label>Fixed amount har member (₹) <span class="muted">— nahi hai to 0 rakho</span></label>
     <input type="number" id="pFixed" inputmode="decimal" min="0" value="${num(p.fixed_amount) || ''}" placeholder="0">
     ${!existing && others.length ? `<label>Pichhle program se member list copy karo (optional)</label>
       <select id="pCopy"><option value="">— Copy mat karo —</option>${others.map(o => `<option value="${esc(o.code)}">${esc(o.name)}</option>`).join('')}</select>` : ''}
@@ -202,8 +206,8 @@ function programForm(existing) {
         const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
-          const src = check(await db(copyFrom).from('hm_members').select('name,flat_no').order('created_at'));
-          if (src.length) check(await db(code).from('hm_members').insert(src.map(m => ({ program_id: prog.id, name: m.name, flat_no: m.flat_no, paid: 0 }))));
+          const src = check(await db(copyFrom).from('hm_members').select('name,flat_no,people').order('created_at').order('flat_no'));
+          if (src.length) check(await db(code).from('hm_members').insert(src.map(m => ({ program_id: prog.id, name: m.name, flat_no: m.flat_no, people: people(m), paid: 0 }))));
         }
         saveMyProgram(prog); closeModal(); toast('Program ban gaya!'); openProgram(code);
       }
@@ -263,10 +267,13 @@ function summaryView(d, c) {
         <div class="muted">${c.balance < 0 ? 'Collection se zyada kharcha ho gaya' : 'Collection − fund se hua kharcha'}</div></div>
       <div class="stat"><div class="label">Total collection</div><div class="value">${rs(c.collected)}</div></div>
       <div class="stat"><div class="label">Total kharcha</div><div class="value">${rs(c.totalExp)}</div></div>
-      <div class="stat"><div class="label">Total ${unit}s</div><div class="value">${c.n}</div></div>
-      <div class="stat"><div class="label">Per ${unit} kharcha</div><div class="value">${rs(c.share)}</div></div>
+      ${p.type === 'flat' ? `
+      <div class="stat"><div class="label">Total flats</div><div class="value">${c.n}</div></div>
+      <div class="stat"><div class="label">Total members</div><div class="value">${c.persons}</div></div>` : `
+      <div class="stat"><div class="label">Total members</div><div class="value">${c.n}</div></div>`}
+      <div class="stat"><div class="label">Per member kharcha</div><div class="value">${rs(c.perPerson)}</div></div>
       ${c.fixed > 0 ? `
-      <div class="stat"><div class="label">Fixed amount / ${unit}</div><div class="value">${rs(c.fixed)}</div></div>
+      <div class="stat"><div class="label">Fixed amount / member</div><div class="value">${rs(c.fixed)}</div></div>
       <div class="stat"><div class="label">Expected total</div><div class="value">${rs(c.expected)}</div></div>
       <div class="stat wide" style="background:transparent;border-color:var(--line)"><div class="label">⏳ Abhi baaki (pending)</div><div class="value amber">${rs(c.pending)}</div></div>` : ''}
     </div>
@@ -313,11 +320,12 @@ function membersView(d, c) {
       <button class="chip" id="bulkBtn">＋ Ek saath add</button>
     </div>
     ${list.length ? `<div class="list">${list.map(m => {
-      const st = memberStatus(p, m), due = c.fixed > 0 ? Math.max(0, c.fixed - num(m.paid)) : 0;
+      const st = memberStatus(p, m), due = c.fixed > 0 ? Math.max(0, c.fixed * people(m) - num(m.paid)) : 0;
+      const info = [p.type === 'flat' ? `👥 ${people(m)}` : '', due > 0 ? `${rs(due)} baaki` : ''].filter(Boolean).join(' · ');
       return `<div class="item" data-mid="${m.id}">
         <div class="badge ${st}">${icon[st]}</div>
         <div class="grow"><div class="bold ellipsis">${esc(memberLabel(p, m))}</div>
-          ${due > 0 ? `<div class="muted">${rs(due)} baaki</div>` : ''}</div>
+          ${info ? `<div class="muted">${info}</div>` : ''}</div>
         <div class="amt ${st === 'ok' ? 'green' : ''}">${rs(m.paid)}</div>
       </div>`; }).join('')}</div>`
       : `<div class="card empty">${d.members.length ? 'Koi match nahi mila.' : `Abhi koi ${p.type === 'flat' ? 'flat' : 'member'} nahi hai. Neeche ＋ dabao, ya "Ek saath add" se poori list daalo.`}</div>`}`;
@@ -349,7 +357,7 @@ function hisaabView(d, c) {
   return `
     <div class="card">
       <div class="row between"><span>Total kharcha</span><b>${rs(c.totalExp)}</b></div>
-      <div class="row between"><span>${c.n} ${unit}s me baanta</span><b>${rs(c.share)} / ${unit}</b></div>
+      <div class="row between"><span>${c.persons} members me baanta</span><b>${rs(c.perPerson)} / member</b></div>
       <div class="row between"><span>Collector ke paas bacha</span><b class="${c.balance < 0 ? 'red' : 'green'}">${rs(c.balance)}</b></div>
     </div>
     <div class="bold" style="margin:4px 2px 8px">🤝 Kaun kisko de</div>
@@ -360,7 +368,7 @@ function hisaabView(d, c) {
     <div class="list">${c.rows.map(r => `
       <div class="item" style="cursor:default">
         <div class="grow"><div class="bold ellipsis">${esc(r.label)}</div>
-          <div class="muted">Diya ${rs(r.paid)}${r.spent ? ` + kharcha ${rs(r.spent)}` : ''} · Hissa ${rs(r.share)}</div></div>
+          <div class="muted">${p.type === 'flat' ? `👥 ${r.people} · ` : ''}Diya ${rs(r.paid)}${r.spent ? ` + kharcha ${rs(r.spent)}` : ''} · Hissa ${rs(r.share)}</div></div>
         <div class="amt ${r.net > 0.009 ? 'green' : r.net < -0.009 ? 'red' : ''}">${r.net > 0.009 ? 'Lena ' + rs(r.net) : r.net < -0.009 ? 'Dena ' + rs(-r.net) : 'Barabar'}</div>
       </div>`).join('')}</div>`;
 }
@@ -397,10 +405,11 @@ function memberForm(m) {
   openModal(`<h2>${m ? 'Edit' : 'Add'} ${isFlat ? 'flat' : 'member'}</h2>
     ${isFlat ? `<label>Flat number</label><input type="text" id="mFlat" placeholder="Jaise A-101" value="${esc(m?.flat_no)}">` : ''}
     <label>${isFlat ? 'Naam (optional)' : 'Naam'}</label><input type="text" id="mName" value="${esc(m?.name)}">
+    ${isFlat ? `<label>Kitne member (log)</label><input type="number" id="mPeople" inputmode="numeric" min="1" step="1" value="${m ? people(m) : 1}">` : ''}
     <label>Kitna diya (₹)</label>
     <input type="number" id="mPaid" inputmode="decimal" min="0" value="${m ? num(m.paid) || '' : ''}" placeholder="0">
     <div class="btns" style="margin-top:8px">
-      ${fixed > 0 ? `<button class="btn sm" id="mFull">Pura ${rs(fixed)}</button>` : ''}
+      ${fixed > 0 ? `<button class="btn sm" id="mFull">Pura amount</button>` : ''}
       ${m ? `<button class="btn sm" id="mAdd">＋ Aur payment jodo</button>` : ''}
       <button class="btn sm" id="mZero">0 karo</button>
     </div>
@@ -410,7 +419,7 @@ function memberForm(m) {
     </div>`);
   (isFlat ? $('#mFlat') : $('#mName')).focus();
   const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
-  on('mFull', () => $('#mPaid').value = fixed);
+  on('mFull', () => $('#mPaid').value = num(fixed * (isFlat ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1)));
   on('mZero', () => $('#mPaid').value = 0);
   on('mAdd', () => {
     const extra = num(prompt('Kitna aur diya? (₹)'));
@@ -422,7 +431,8 @@ function memberForm(m) {
     catch (e) { toast('Error: ' + e.message); }
   });
   $('#mSave').onclick = async () => {
-    const row = { name: $('#mName').value.trim(), flat_no: isFlat ? $('#mFlat').value.trim() : '', paid: num($('#mPaid').value) };
+    const row = { name: $('#mName').value.trim(), flat_no: isFlat ? $('#mFlat').value.trim() : '', paid: num($('#mPaid').value),
+      people: isFlat ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1 };
     if (!row.name && !row.flat_no) return toast(isFlat ? 'Flat number daalo' : 'Naam daalo');
     $('#mSave').disabled = true;
     try {
@@ -437,14 +447,18 @@ function memberForm(m) {
 function bulkForm() {
   const p = state.data.program, isFlat = p.type === 'flat';
   openModal(`<h2>Ek saath add karo</h2>
-    <p class="muted">Har line me ek ${isFlat ? 'flat. Flat number ke baad comma laga ke naam bhi likh sakte ho, jaise <b>A-101, Sharma ji</b>' : 'member ka naam'}.</p>
-    <textarea id="bulk" rows="9" placeholder="${isFlat ? 'A-101, Sharma ji\nA-102\nA-103, Patel' : 'Rahul\nAmit\nPriya'}"></textarea>
+    <p class="muted">Har line me ek ${isFlat ? 'flat. Format: <b>Flat, Naam, Kitne member</b>, jaise <b>A-101, Sharma ji, 4</b>. Naam na ho to <b>A-102, 3</b> bhi chalega' : 'member ka naam'}.</p>
+    <textarea id="bulk" rows="9" placeholder="${isFlat ? 'A-101, Sharma ji, 4\nA-102, 3\nA-103, Patel, 2' : 'Rahul\nAmit\nPriya'}"></textarea>
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="bSave">Add karo</button></div>`);
   $('#bSave').onclick = async () => {
     const rows = $('#bulk').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
       if (!isFlat) return { program_id: p.id, name: l, flat_no: '', paid: 0 };
-      const [flat, ...rest] = l.split(',');
-      return { program_id: p.id, flat_no: flat.trim(), name: rest.join(',').trim(), paid: 0 };
+      // "A-101, Patel, 4" -> flat, naam, members. Aakhri hissa number ho to wo members ki ginti hai
+      const parts = l.split(',').map(x => x.trim());
+      let count = 1;
+      if (parts.length > 1 && /^\d+$/.test(parts[parts.length - 1])) count = Math.max(1, parseInt(parts.pop()));
+      const [flat, ...rest] = parts;
+      return { program_id: p.id, flat_no: flat, name: rest.join(', '), people: count, paid: 0 };
     });
     if (!rows.length) return toast('Kuchh likho');
     $('#bSave').disabled = true;
@@ -519,17 +533,17 @@ function reportTables() {
     p, c,
     summary: [
       ['Program', p.name], ['Type', p.type === 'flat' ? 'Society / Flat' : 'Friends'], ['Share code', p.code],
-      ['Total members', c.n], ['Total collection', num(c.collected)],
-      ...(c.fixed > 0 ? [['Fixed amount', c.fixed], ['Expected total', num(c.expected)], ['Pending', num(c.pending)]] : []),
+      ...(p.type === 'flat' ? [['Total flats', c.n]] : []), ['Total members', c.persons], ['Total collection', num(c.collected)],
+      ...(c.fixed > 0 ? [['Fixed amount / member', c.fixed], ['Expected total', num(c.expected)], ['Pending', num(c.pending)]] : []),
       ['Total kharcha', num(c.totalExp)], ['Fund se kharcha', num(c.fundExp)], ['Members ne khud kiya', num(c.personalExp)],
-      ['Per member kharcha', num(c.share)], ['Collector ke paas bacha', num(c.balance)],
+      ['Per member kharcha', num(c.perPerson)], ['Collector ke paas bacha', num(c.balance)],
     ],
-    members: [[p.type === 'flat' ? 'Flat' : 'Naam', 'Naam', 'Diya (₹)', 'Status'],
-      ...d.members.map(m => [m.flat_no || m.name, p.type === 'flat' ? m.name : '', num(m.paid), status[memberStatus(p, m)]])],
+    members: [[p.type === 'flat' ? 'Flat' : 'Naam', 'Naam', 'Members', 'Diya (₹)', 'Status'],
+      ...d.members.map(m => [m.flat_no || m.name, p.type === 'flat' ? m.name : '', people(m), num(m.paid), status[memberStatus(p, m)]])],
     expenses: [['Date', 'Kharcha', 'Amount (₹)', 'Kisne diya', 'Bill photo'],
       ...d.expenses.map(e => [e.spent_on, e.title, num(e.amount), e.paid_by ? byId[e.paid_by] || '' : 'Fund', e.photo_url || ''])],
-    hisaab: [['Member', 'Diya (₹)', 'Khud kharcha (₹)', 'Hissa (₹)', 'Lena(+)/Dena(−) (₹)'],
-      ...c.rows.map(r => [r.label, num(r.paid), num(r.spent), num(r.share), num(r.net)])],
+    hisaab: [['Member', 'Log', 'Diya (₹)', 'Khud kharcha (₹)', 'Hissa (₹)', 'Lena(+)/Dena(−) (₹)'],
+      ...c.rows.map(r => [r.label, r.people, num(r.paid), num(r.spent), num(r.share), num(r.net)])],
     settle: [['Kaun', 'Kisko', 'Kitna (₹)'], ...c.settlements.map(s => [s.from, s.to, num(s.amt)])],
   };
 }
@@ -538,7 +552,7 @@ function exportPdf() {
   const t = reportTables();
   const table = rows => `<table><thead><tr>${rows[0].map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.slice(1).map(r => `<tr>${r.map(v => `<td>${esc(typeof v === 'number' ? rs(v) : (String(v).startsWith('http') ? 'Haan' : v))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   $('#printArea').innerHTML = `<h1>${esc(t.p.name)}</h1><div>HisaabMitra · ${new Date().toLocaleDateString('en-IN')}</div>
-    <h2>Summary</h2><table><tbody>${t.summary.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(typeof v === 'number' && k !== 'Total members' ? rs(v) : v)}</td></tr>`).join('')}</tbody></table>
+    <h2>Summary</h2><table><tbody>${t.summary.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(typeof v === 'number' && !['Total members', 'Total flats'].includes(k) ? rs(v) : v)}</td></tr>`).join('')}</tbody></table>
     <h2>Collection</h2>${table(t.members)}
     <h2>Kharcha</h2>${table(t.expenses)}
     <h2>Har member ka hisaab</h2>${table(t.hisaab)}
@@ -582,7 +596,7 @@ async function restoreBackup(file) {
     }).select().single());
     const idMap = {};
     for (const m of data.members || []) {
-      const nm = check(await c.from('hm_members').insert({ program_id: prog.id, name: m.name || '', flat_no: m.flat_no || '', paid: num(m.paid) }).select('id').single());
+      const nm = check(await c.from('hm_members').insert({ program_id: prog.id, name: m.name || '', flat_no: m.flat_no || '', people: people(m), paid: num(m.paid) }).select('id').single());
       idMap[m.id] = nm.id;
     }
     const ex = (data.expenses || []).map(e => ({
