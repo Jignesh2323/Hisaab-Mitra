@@ -208,9 +208,6 @@ function renderHome() {
         <div><b>${all.filter(x => x.type === 'trip').length}</b>Trips</div>
         <div><b>${all.filter(x => x.type === 'flat').length}</b>Society</div></div>
     </div>
-    <div class="btns" style="margin-bottom:12px">
-      <button class="btn" id="restoreBtn">📂 Backup restore</button>
-    </div>
     ${all.length ? `<input type="search" class="search" id="homeSearch" placeholder="Program search karo…" value="${esc(state.homeQ)}">` : ''}
     ${list.length ? `<div class="list">${list.map(p => `
       <div class="item" data-code="${esc(p.code)}">
@@ -220,12 +217,9 @@ function renderHome() {
         <div class="muted">›</div>
       </div>`).join('')}</div>`
       : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Neeche ＋ dabake naya program banao.</p>`}</div>`}
-    <input type="file" id="restoreFile" accept=".json,application/json" hidden>
     <button class="fab" id="newBtn">＋ Naya Program</button>`;
   app.querySelectorAll('.item').forEach(el => el.onclick = () => openProgram(el.dataset.code));
   $('#newBtn').onclick = () => programForm();
-  $('#restoreBtn').onclick = () => $('#restoreFile').click();
-  $('#restoreFile').onchange = e => restoreBackup(e.target.files[0]);
   const hs = $('#homeSearch');
   if (hs) hs.oninput = () => { state.homeQ = hs.value; renderHome(); const n = $('#homeSearch'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
 }
@@ -449,14 +443,14 @@ function membersView(d, c) {
       const r = c.rows.find(x => x.id === m.id);
       return `<div class="item" data-mid="${m.id}">
         <div class="badge ${Math.abs(r.net) < 0.01 ? 'ok' : 'part'}">${Math.abs(r.net) < 0.01 ? '✅' : '🧾'}</div>
-        <div class="grow"><div class="bold ellipsis">${esc(r.label)}</div>
+        <div class="grow"><div class="bold ellipsis" data-notr>${esc(r.label)}</div>
           <div class="muted">${isTrip(p) ? `${faces(r.people)} · ` : ''}${r.paid ? `Collection ${rs(r.paid)} · ` : ''}Kharcha ${rs(r.spent)} · Hissa ${rs(r.share)}</div></div>
         <div class="amt ${r.net > 0.009 ? 'green' : r.net < -0.009 ? 'red' : ''}">${r.net > 0.009 ? 'Dena ' + rs(r.net) : r.net < -0.009 ? 'Lena ' + rs(-r.net) : 'Barabar'}</div>
       </div>`;
     }
     return `<div class="item" data-mid="${m.id}">
       <div class="badge ${st}">${icon[st]}</div>
-      <div class="grow"><div class="bold ellipsis">${esc(memberLabel(p, m))}</div>
+      <div class="grow"><div class="bold ellipsis" data-notr>${esc(memberLabel(p, m))}</div>
         ${info ? `<div class="muted">${info}</div>` : ''}</div>
       <div class="amt ${st === 'ok' ? 'green' : ''}">${rs(m.paid)}</div>
     </div>`;
@@ -516,7 +510,7 @@ function expensesView(d, c) {
     ${list.length ? eventGroups(c, list, e => `
       <div class="item" data-eid="${e.id}">
         ${e.photo_url ? `<img class="thumb" src="${esc(e.photo_url)}" alt="" loading="lazy">` : `<div class="badge part">🧾</div>`}
-        <div class="grow"><div class="bold ellipsis">${esc(e.title)}</div>
+        <div class="grow"><div class="bold ellipsis" data-notr>${esc(e.title)}</div>
           <div class="muted ellipsis">${isDep(e) ? (depBack(e) ? `🔁 Deposit · wapas mila ${rs(e.returned)}` : '🔁 Deposit · <span class="amber">wapas aana baaki</span>') : `${fmtDate(e.spent_on)} · ${payer(e) ? `🙋 ${esc(payer(e))} ne diya · ${owedOf(e) > 0 ? `<span class="red">${rs(owedOf(e))} dena baaki</span>` : '<span class="green">chukta</span>'}` : e.paid_by ? 'Diya: ' + esc(byId[e.paid_by] || '?') : 'Fund se'}`}</div></div>
         <div class="amt ${isDep(e) && !depBack(e) ? 'amber' : ''}">${rs(e.amount)}</div>
       </div>`)
@@ -530,7 +524,7 @@ function owedCard(c) {
     <div class="row between"><div class="bold">💸 Logon ko dena baaki</div>
       ${c.owed > 0.009 ? `<b class="red">${rs(c.owed)}</b>` : '<b class="green">✅ Sab chuka diya</b>'}</div>
     ${c.owedBy.map(o => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line);margin-top:6px">
-      <div class="grow"><div class="ellipsis bold">${esc(o.name)}</div>
+      <div class="grow"><div class="ellipsis bold" data-notr>${esc(o.name)}</div>
         <div class="muted">${o.items} kharcha · kul ${rs(o.total)}${o.total - o.owed > 0.009 ? ` · diya ${rs(o.total - o.owed)}` : ''}</div></div>
       ${o.owed > 0.009 ? `<b class="red" style="margin-right:8px">${rs(o.owed)}</b><button class="btn sm primary" data-repay="${esc(o.name)}">Paisa diya</button>`
         : '<span class="green small">✅ Chukta</span>'}</div>`).join('')}
@@ -569,7 +563,7 @@ function depositCard(d, c) {
     <div class="row between"><div class="bold">🔁 Deposit</div>
       ${open.length ? `<b class="amber">${rs(c.depPending)} wapas aana baaki</b>` : '<b class="green">✅ Sab wapas mil gaya</b>'}</div>
     ${open.map(e => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line);margin-top:6px">
-      <div class="grow"><div class="ellipsis">${esc(e.title)}</div><div class="muted">${(e.event || '').trim() ? esc(e.event) + ' · ' : ''}${fmtDate(e.spent_on)}</div></div>
+      <div class="grow"><div class="ellipsis" data-notr>${esc(e.title)}</div><div class="muted">${(e.event || '').trim() ? esc(e.event) + ' · ' : ''}${fmtDate(e.spent_on)}</div></div>
       <b style="margin-right:8px">${rs(e.amount)}</b><button class="btn sm primary" data-depback="${e.id}">Mil gaya</button></div>`).join('')}
     ${c.depReturned || c.depLost ? `<div class="muted" style="margin-top:8px">Wapas mila ${rs(c.depReturned)}${c.depLost ? ` · Kata (kharche me juda) ${rs(c.depLost)}` : ''}</div>` : ''}
   </div>`;
@@ -628,7 +622,7 @@ function friendsSettle(d, c) {
     <div class="bold">💰 Collection aur wapsi</div>
     <p class="muted small" style="margin:4px 0 8px">Har vyakti ka hissa ${rs(c.perPerson)}${isTrip(state.data.program) ? ' (couple ka double)' : ''}. Jisne kam kharcha kiya usse paisa lo, jisne zyada kiya use wapas do.</p>
     ${c.rows.map(r => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line)">
-      <div class="grow"><div class="bold ellipsis">${esc(r.label)}</div>
+      <div class="grow"><div class="bold ellipsis" data-notr>${esc(r.label)}</div>
         <div class="muted">${isTrip(state.data.program) ? `${faces(r.people)} · ` : ''}Kharcha ${rs(r.spent)} · Hissa ${rs(r.share)}${r.paid ? ` · ${r.paid > 0 ? 'Diya' : 'Wapas mila'} ${rs(Math.abs(r.paid))}` : ''}</div></div>
       ${r.net < -0.009 ? `<b class="red" style="margin-right:8px">${rs(-r.net)} lena</b><button class="btn sm primary" data-settle="${r.id}">Le liya</button>`
         : r.net > 0.009 ? `<b class="green" style="margin-right:8px">${rs(r.net)} dena</b><button class="btn sm primary" data-settle="${r.id}">De diya</button>`
@@ -671,7 +665,7 @@ function hisaabView(d, c) {
     ${isGroup(p) ? '' : `<div class="bold" style="margin:4px 2px 8px">Har ${unit} ka hisaab</div>
     <div class="list">${c.rows.map(r => `
       <div class="item" style="cursor:default">
-        <div class="grow"><div class="bold ellipsis">${esc(r.label)}</div>
+        <div class="grow"><div class="bold ellipsis" data-notr>${esc(r.label)}</div>
           <div class="muted">${p.type === 'flat' ? `${faces(r.people)} · ` : ''}Diya ${rs(r.paid)}${r.spent ? ` + kharcha ${rs(r.spent)}` : ''} · Hissa ${rs(r.share)}</div></div>
         <div class="amt ${r.net > 0.009 ? 'green' : r.net < -0.009 ? 'red' : ''}">${r.net > 0.009 ? 'Lena ' + rs(r.net) : r.net < -0.009 ? 'Dena ' + rs(-r.net) : 'Barabar'}</div>
       </div>`).join('')}</div>`}`;
@@ -802,7 +796,7 @@ function roundForm() {
     <p class="muted">Har vyakti se kitna lena hai? Couple se apne aap double. Kisi ka alag ho to neeche badal do.</p>
     <label>Har vyakti se (₹)</label><input type="number" id="rPer" inputmode="decimal" min="0" value="${last}" placeholder="Jaise 2000">
     <div class="list" style="margin-top:10px">${d.members.map(m => `<div class="item" style="cursor:default">
-      <div class="grow"><div class="bold ellipsis">${esc(memberLabel(p, m))}</div><div class="muted">${faces(people(m))} · ab tak ${rs(m.paid)}</div></div>
+      <div class="grow"><div class="bold ellipsis" data-notr>${esc(memberLabel(p, m))}</div><div class="muted">${faces(people(m))} · ab tak ${rs(m.paid)}</div></div>
       <input type="number" inputmode="decimal" min="0" data-rm="${m.id}" data-ppl="${people(m)}" style="width:110px;text-align:right" placeholder="0"></div>`).join('')}</div>
     <div class="muted" id="rTot" style="margin-top:8px"></div>
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="rSave">Save</button></div>`);
@@ -1132,14 +1126,26 @@ async function openSettings() {
        <p class="muted small" style="margin-top:6px">Fingerprint / Face lock ke liye pehle PIN set karo. Fingerprint na chale to PIN kaam aayega.</p>`}
     <div class="bold" style="margin-top:16px">🎨 Theme</div>
     <div class="seg" style="margin-top:6px"><button class="btn ${!dark ? 'primary' : ''}" data-th="light">☀️ Light</button><button class="btn ${dark ? 'primary' : ''}" data-th="dark">🌙 Dark</button></div>
+    <div class="bold" style="margin-top:16px">🌐 Language / भाषा / ભાષા</div>
+    <div class="seg" style="margin-top:6px">${Object.entries(LANGS).map(([k, l]) => `<button class="btn ${LANG === k ? 'primary' : ''}" data-lang="${k}" data-notr>${l}</button>`).join('')}</div>
+    <div class="bold" style="margin-top:16px">💾 Backup restore</div>
+    <p class="muted" style="margin:4px 0 8px">Kisi program ki backup file (.json) se uski nayi copy banao. Backup program ke Summary me 💾 Backup se milta hai.</p>
+    <button class="btn block" id="sRestore">📂 Backup file chuno</button>
+    <input type="file" id="restoreFile" accept=".json,application/json" hidden>
     <div class="actions"><button class="btn block" onclick="closeModal()">Band karo</button></div>`);
   const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
+  $('#sheet').querySelectorAll('[data-lang]').forEach(b => b.onclick = () => {
+    if (b.dataset.lang === LANG) return;
+    store.set('hm_lang', b.dataset.lang); location.reload();
+  });
+  on('sRestore', () => $('#restoreFile').click());
+  $('#restoreFile').onchange = e => { closeModal(); restoreBackup(e.target.files[0]); };
   $('#sheet').querySelectorAll('[data-th]').forEach(b => b.onclick = () => { store.set('hm_theme', b.dataset.th); applyTheme(b.dataset.th); openSettings(); });
   const setNew = async () => {
     const a = await askPin('Naya PIN', '4 se 6 number ka PIN chuno.'); if (!a) return openSettings();
     const b = await askPin('PIN dobara daalo'); if (!b) return openSettings();
     if (a !== b) { toast('Dono PIN alag hain, dobara try karo'); return openSettings(); }
-    store.set('hm_pin', await hashPin(a)); toast('PIN set ho gaya'); openSettings();
+    store.set('hm_pin', await hashPin(a)); session.ok = true; toast('PIN set ho gaya'); openSettings();
   };
   const verifyOld = async () => {
     const o = await askPin('Purana PIN daalo');
@@ -1163,8 +1169,14 @@ async function openSettings() {
 $('#settingsBtn').onclick = openSettings;
 
 // Lock screen: sab kuchh dhak deta hai jab tak PIN / fingerprint sahi na ho
-function showLock() {
-  if (!lock.on || $('#lockScreen')) return;
+// Unlock is tab/app session tak yaad rehta hai: reload par PIN nahi, app band karke kholne par maangega
+const session = {
+  get ok() { try { return sessionStorage.getItem('hm_unlocked') === '1'; } catch { return false; } },
+  set ok(v) { try { v ? sessionStorage.setItem('hm_unlocked', '1') : sessionStorage.removeItem('hm_unlocked'); } catch {} },
+};
+function showLock(force) {
+  if (!lock.on || $('#lockScreen') || (!force && session.ok)) return;
+  session.ok = false;
   const el = document.createElement('div');
   el.id = 'lockScreen'; el.className = 'lock';
   el.innerHTML = `<div class="lock-box">
@@ -1174,7 +1186,7 @@ function showLock() {
     ${lock.bioId ? `<button class="btn block" id="lkBio" style="margin-top:8px">👆 Fingerprint / Face se kholo</button>` : ''}
     <div id="lkMsg" class="red small" style="min-height:20px;margin-top:8px"></div></div>`;
   document.body.appendChild(el);
-  const unlock = () => el.remove();
+  const unlock = () => { el.remove(); session.ok = true; };
   const tryPin = async () => {
     const v = $('#lkPin').value.trim(); if (!v) return;
     if (await hashPin(v) === lock.pinHash) unlock();
@@ -1192,10 +1204,11 @@ function showLock() {
 // App 1 minute se zyada background me rahe to dobara lock
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) state.hiddenAt = Date.now();
-  else if (state.hiddenAt && Date.now() - state.hiddenAt > 60000) showLock();
+  else if (state.hiddenAt && Date.now() - state.hiddenAt > 60000) showLock(true);
 });
 
 // ---------- start ----------
+i18n.start();
 showLock();
 const startRoute = readRoute();
 if (startRoute.code) openProgram(startRoute.code, null, startRoute.tab, true);
