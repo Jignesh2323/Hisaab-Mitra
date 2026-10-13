@@ -273,3 +273,22 @@ body:has(.tabs) .toast { bottom: 160px; }
 }
 .floor-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; }
 .floor-meta .floor-status { font-size: 13px; padding: 4px 10px; }
+
+/* ---------- Home: program cards (ek nazar me pehchan) ---------- */
+.prog-cards { display: flex; flex-direction: column; gap: 12px; }
+.prog-card {
+  position: relative; display: flex; align-items: center; gap: 13px; padding: 14px; cursor: pointer; overflow: hidden;
+  background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--pc); border-radius: 20px;
+  box-shadow: var(--shadow-3d); animation: rise .35s ease both; transition: transform .12s;
+}
+.prog-card:active { transform: scale(.98); }
+.prog-card::after { content: ""; position: absolute; right: -40px; top: -40px; width: 120px; height: 120px; border-radius: 50%; background: var(--pc); opacity: .07; pointer-events: none; }
+.prog-icon { width: 56px; height: 56px; flex: none; border-radius: 18px; display: grid; place-items: center; font-size: 30px; box-shadow: 0 10px 18px -8px var(--pc), 0 2px 0 rgba(255,255,255,.35) inset; }
+.prog-name { font-size: 16px; font-weight: 700; line-height: 1.25; }
+.prog-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 5px 0 4px; }
+.tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--primary-soft); color: var(--primary); }
+.tag.t-collect { background: #dcfce7; color: #047857; }
+:root[data-theme="dark"] .tag.t-collect { background: #064e3b; color: #6ee7b7; }
+.prog-amt { text-align: right; flex: none; display: flex; flex-direction: column; }
+.prog-amt b { font-size: 16px; color: var(--pc); }
+.prog-amt .muted { font-size: 11px; }

@@ -244,7 +244,7 @@ function goHome(fromHistory) {
 // Sabhi programs (sabko dikhte hain), naye pehle
 async function loadPrograms() {
   // hm_members(people): har program ke flat/member aur log ginne ke liye
-  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,hm_members(people)';
+  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,icon,hm_members(people,paid)';
   const pub = check(await db('ALL').from('hm_programs').select(cols).eq('space', SPACE).order('created_at', { ascending: false }));
   // Private program sirf unke code se milte hain jo is phone ne isi space me link se khole the
   const mine = myPrograms().filter(x => x.private && (x.space || SPACE) === SPACE && !pub.some(p => p.code === x.code));
@@ -268,17 +268,25 @@ function renderHome() {
         <div><b>${all.filter(x => x.type === 'flat').length}</b>Society</div></div>
     </div>
     ${all.length ? `<input type="search" class="search" id="homeSearch" placeholder="Program search karo…" value="${esc(state.homeQ)}">` : ''}
-    ${list.length ? `<div class="list">${list.map(p => `
-      <div class="item" data-code="${esc(p.code)}">
-        <div class="badge prog-badge type-${p.type}">${TYPE_LABEL[p.type]?.split(' ')[0] || '👥'}</div>
-        <div class="grow"><div class="bold ellipsis">${p.is_private ? '🔒 ' : ''}${p.collect_only ? '💵 ' : ''}${esc(p.name)}</div>
-          ${p.hm_members ? `<div class="small" style="margin:2px 0"><b>${p.type === 'flat' ? `🏢 ${p.hm_members.length} flats · ` : ''}👥 ${p.hm_members.reduce((t, m) => t + people(m), 0)} members</b></div>` : ''}
-          <div class="muted">${(TYPE_LABEL[p.type] || '').replace(/^\S+ /, '')}${daysOf(p) > 1 ? ` · ${daysOf(p)} din` : ''} · ${fmtDT(new Date(p.created_at))}</div></div>
-        <div class="muted">›</div>
-      </div>`).join('')}</div>`
+    ${list.length ? `<div class="prog-cards">${list.map(p => {
+      const L = progLook(p), ms = p.hm_members || [];
+      const got = ms.reduce((t, m) => t + num(m.paid), 0), ppl = ms.reduce((t, m) => t + people(m), 0);
+      return `<div class="prog-card" data-code="${esc(p.code)}" style="--pc:${L.a}">
+        <div class="prog-icon" style="background:${L.grad}">${L.icon}</div>
+        <div class="grow">
+          <div class="prog-name" data-notr>${esc(p.name)}</div>
+          <div class="prog-tags">
+            ${p.collect_only ? '<span class="tag t-collect">💵 Sirf collection</span>' : `<span class="tag">${TYPE_LABEL[p.type] || ''}</span>`}
+            ${daysOf(p) > 1 ? `<span class="tag">📅 ${daysOf(p)} din</span>` : ''}
+            ${p.is_private ? '<span class="tag">🔒 Private</span>' : ''}
+          </div>
+          <div class="muted">${p.type === 'flat' ? `🏢 ${ms.length} flats · ` : ''}👥 ${ppl} members · ${fmtDT(new Date(p.created_at))}</div>
+        </div>
+        <div class="prog-amt"><b>${rs(got)}</b><span class="muted">collection</span></div>
+      </div>`; }).join('')}</div>`
       : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Neeche ＋ dabake naya program banao.</p>`}</div>`}
     <button class="fab" id="newBtn">＋ Naya Program</button>`;
-  app.querySelectorAll('.item').forEach(el => el.onclick = () => openProgram(el.dataset.code));
+  app.querySelectorAll('.prog-card').forEach(el => el.onclick = () => openProgram(el.dataset.code));
   $('#newBtn').onclick = () => programForm();
   $('#spaceBtn').onclick = spaceMenu;
   const hs = $('#homeSearch');
@@ -434,12 +442,38 @@ function dayLabel(p, name) {
 }
 const multiDay = p => daysOf(p) > 1 || (p.id && state.data?.program?.id === p.id && state.data.expenses.some(e => (e.event || '').trim()));
 
+// Program ki pehchan: icon aur rang (naam ke shabdon se apne aap)
+const ICONS = [
+  ['🎨', /decor|sajav|sajaw|lighting|light|mandap|rangoli/i, ['#f472b6', '#a855f7']],
+  ['🍽️', /nast|nasta|breakfast|snack|chai|tea/i, ['#fb923c', '#f43f5e']],
+  ['🍛', /jaman|jamna|bhoj|food|khana|dinner|lunch|prasad|bhandara/i, ['#f59e0b', '#ef4444']],
+  ['🪔', /navrat|garba|diwali|puja|pooja|aarti|ganpati|ganesh|utsav|festival/i, ['#f97316', '#db2777']],
+  ['🧳', /trip|tour|yatra|picnic|goa|travel/i, ['#38bdf8', '#6366f1']],
+  ['🎂', /birthday|bday|party|anniversary/i, ['#ec4899', '#8b5cf6']],
+  ['🔧', /maint|repair|mainten|lift|paint|safai|clean/i, ['#64748b', '#0ea5e9']],
+  ['🎵', /dj|music|sound|band/i, ['#8b5cf6', '#06b6d4']],
+  ['🏏', /cricket|sport|game|match|tournament/i, ['#22c55e', '#0ea5e9']],
+  ['💐', /gift|flower|phool|welcome|felicit/i, ['#f43f5e', '#f59e0b']],
+];
+const ICON_CHOICES = ['🎨', '🍽️', '🍛', '🪔', '🧳', '🎂', '🔧', '🎵', '🏏', '💐', '🏢', '👥', '💵', '🎉', '🛕', '🚌'];
+const COLORS = [['#6366f1', '#8b5cf6'], ['#10b981', '#0ea5e9'], ['#f97316', '#ef4444'], ['#ec4899', '#a855f7'], ['#0ea5e9', '#2563eb'], ['#f59e0b', '#f97316']];
+function progLook(p) {
+  const hit = ICONS.find(([, re]) => re.test(p.name || ''));
+  const icon = p.icon || (hit ? hit[0] : (TYPE_LABEL[p.type]?.split(' ')[0] || '👥'));
+  const byIcon = ICONS.find(([i]) => i === icon);
+  let h = 0; for (const ch of p.name || '') h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const [a, b] = byIcon ? byIcon[2] : COLORS[h % COLORS.length];
+  return { icon, grad: `linear-gradient(135deg, ${a}, ${b})`, a };
+}
+
 // New / edit program
 function programForm(existing) {
   const others = (state.programs || []).filter(p => !existing || p.code !== existing.code);
   const p = existing || { name: '', type: 'flat', fixed_amount: 0, days: 1 };
   openModal(`<h2>${existing ? 'Program edit karo' : 'Naya Program'}</h2>
     <label>Program ka naam</label><input type="text" id="pName" placeholder="Jaise Ganpati Utsav 2026" value="${esc(p.name)}">
+    <label>Icon <span class="muted">(khaali chhodo to naam se apne aap)</span></label>
+    <div class="chips" id="pIcons" style="margin-bottom:0">${['', ...ICON_CHOICES].map(i => `<button type="button" class="chip ${(p.icon || '') === i ? 'active' : ''}" data-icon="${i}">${i || '✨ Auto'}</button>`).join('')}</div>
     <label>Type</label>
     <div class="seg">${Object.entries(TYPE_LABEL).map(([k, l]) => `<button class="btn ${p.type === k ? 'primary' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
     <p class="muted small" id="pTypeHint" style="margin:6px 0 0"></p>
@@ -461,7 +495,11 @@ function programForm(existing) {
     ${!existing && others.length ? `<label>Pichhle program se member list copy karo (optional)</label>
       <select id="pCopy"><option value="">— Copy mat karo —</option>${others.map(o => `<option value="${esc(o.code)}">${esc(o.name)}</option>`).join('')}</select>` : ''}
     <div class="actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="pSave">${existing ? 'Save' : 'Banao'}</button></div>`);
-  let type = p.type, many = multiDay(p);
+  let type = p.type, many = multiDay(p), icon = p.icon || '';
+  $('#sheet').querySelectorAll('[data-icon]').forEach(b => b.onclick = () => {
+    icon = b.dataset.icon;
+    $('#sheet').querySelectorAll('[data-icon]').forEach(x => x.classList.toggle('active', x === b));
+  });
   const drawDates = () => {
     const n = Math.min(31, Math.max(2, parseInt($('#pDays').value) || 2)), old = [...$('#sheet').querySelectorAll('[data-dd]')].map(i => i.value);
     const saved = dayDates(p);
@@ -497,12 +535,12 @@ function programForm(existing) {
     $('#pSave').disabled = true;
     try {
       if (existing) {
-        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, day_dates, is_private, collect_only }).eq('id', existing.id).select().single());
+        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, day_dates, is_private, collect_only, icon }).eq('id', existing.id).select().single());
         saveMyProgram({ ...existing, name, type, is_private });
         closeModal(); toast('Save ho gaya'); refresh();
       } else {
         const code = newCode();
-        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, day_dates, is_private, collect_only, space: SPACE }).select().single());
+        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, day_dates, is_private, collect_only, icon, space: SPACE }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
           const srcProg = (state.programs || []).find(x => x.code === copyFrom);
@@ -564,7 +602,7 @@ async function refresh() {
 function renderProgram() {
   state.programs = null;
   const d = state.data, p = d.program, c = calc(d);
-  $('#title').textContent = p.name;
+  $('#title').textContent = `${progLook(p).icon} ${p.name}`;
   const tabs = [['summary', '📊', 'Summary'], ['members', p.type === 'flat' ? '🏢' : '👥', p.type === 'flat' ? 'Flats' : 'Members'], ['expenses', '🧾', 'Kharcha'], ['hisaab', '🤝', 'Hisaab']]
     .filter(([k]) => !p.collect_only || k === 'summary' || k === 'members');
   if (p.collect_only && !['summary', 'members'].includes(state.tab)) state.tab = 'summary';
