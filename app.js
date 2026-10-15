@@ -187,6 +187,8 @@ const depBack = e => e.returned != null;
 const realAmt = e => isDep(e) ? (depBack(e) ? Math.max(0, num(e.amount) - num(e.returned)) : 0) : num(e.amount);
 // Kisi aur ne apni jeb se diya: collector ke haath se abhi sirf utna gaya jitna lauta diya
 const payer = e => (e.payer_name || '').trim();
+// "VivekBhai" aur "Vivekbhai " ek hi vyakti: bade/chhote akshar aur extra space ka farak nahi
+const payerKey = n => String(n || '').trim().replace(/\s+/g, ' ').toLowerCase();
 const owedOf = e => payer(e) && !isDep(e) ? Math.max(0, num(e.amount) - num(e.repaid)) : 0;
 const cashOut = e => isDep(e) ? num(e.amount) - (depBack(e) ? num(e.returned) : 0) : payer(e) ? Math.min(num(e.amount), num(e.repaid)) : num(e.amount);
 
@@ -206,7 +208,7 @@ function calc(d) {
   const owed = expenses.reduce((s, e) => s + owedOf(e), 0);
   const owedBy = new Map();
   expenses.filter(e => payer(e) && !isDep(e)).forEach(e => {
-    const k = payer(e), o = owedBy.get(k) || { name: k, total: 0, owed: 0, items: 0 };
+    const k = payerKey(payer(e)), o = owedBy.get(k) || { name: payer(e), total: 0, owed: 0, items: 0 };
     o.total += num(e.amount); o.owed += owedOf(e); o.items++; owedBy.set(k, o);
   });
   // Sab udhaar chukane aur deposit wapas aane ke baad asli bacha paisa
@@ -951,7 +953,7 @@ function owedCard(c) {
 
 // Kisi ko paisa lautaya: pura ya thoda. Uske purane kharche pehle chukte hain.
 async function repay(name) {
-  const items = state.data.expenses.filter(e => payer(e) === name && owedOf(e) > 0)
+  const items = state.data.expenses.filter(e => payerKey(payer(e)) === payerKey(name) && owedOf(e) > 0)
     .sort((a, b) => (a.spent_on || '').localeCompare(b.spent_on || '') || (a.created_at || '').localeCompare(b.created_at || ''));
   const due = items.reduce((s, e) => s + owedOf(e), 0);
   if (!due) return;
@@ -1407,7 +1409,7 @@ function expenseForm(e) {
       <div id="ePayerBox" class="${payer(e || {}) ? '' : 'hidden'}">
         <label>Kisne diya (naam / flat)</label>
         <input type="text" id="ePayer" list="payerList" placeholder="Jaise Rameshbhai C-402" value="${esc(payer(e || {}))}">
-        <datalist id="payerList">${[...new Set([...d.expenses.map(payer).filter(Boolean), ...d.members.map(m => memberLabel(p, m))])].map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+        <datalist id="payerList">${[...new Map([...d.expenses.map(payer).filter(Boolean), ...d.members.map(m => memberLabel(p, m))].map(n => [payerKey(n), n])).values()].map(x => `<option value="${esc(x)}">`).join('')}</datalist>
         <p class="muted small" style="margin:6px 0 0">Ye paisa use lautana hai. Summary me "Logon ko dena baaki" me dikhega.</p>
         ${e && payer(e) && num(e.repaid) > 0 ? `<p class="small" style="margin:6px 0 0">Ab tak diya: <b>${rs(e.repaid)}</b> · Baaki: <b class="${owedOf(e) ? 'red' : 'green'}">${rs(owedOf(e))}</b></p>` : ''}
       </div></div>`}
@@ -1463,7 +1465,10 @@ function expenseForm(e) {
       const event = $('#eEvent').value.trim();
       state.lastEv = event;
       const is_deposit = $('#eDep').checked;
-      const payer_name = !is_deposit && who === 'other' ? $('#ePayer').value.trim() : '';
+      let payer_name = !is_deposit && who === 'other' ? $('#ePayer').value.trim().replace(/\s+/g, ' ') : '';
+      // Pehle se likha naam ho (bade/chhote akshar alag) to wahi spelling rakho
+      const same = d.expenses.map(payer).find(n => n && payerKey(n) === payerKey(payer_name));
+      if (same) payer_name = same;
       if (!is_deposit && who === 'other' && !payer_name) { btn.disabled = false; btn.textContent = 'Save'; return toast('Kisne paisa diya, naam likho'); }
       const buyer = isGroup(p) && !is_deposit ? ($('#eBuyer').value || null) : null;
       if (isGroup(p)) state.lastPayer = $('#eBuyer')?.value ?? '';
