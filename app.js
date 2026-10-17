@@ -273,7 +273,7 @@ function goHome(fromHistory) {
 // Sabhi programs (sabko dikhte hain), naye pehle
 async function loadPrograms() {
   // hm_members(people): har program ke flat/member aur log ginne ke liye
-  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,icon,owner_hash,track_pass,pass_label,hm_members(people,paid,passes)';
+  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,icon,owner_hash,track_pass,pass_label,fixed_amount,hm_members(id,people,paid,passes),hm_expenses(amount,is_deposit,returned,payer_name,repaid,paid_by,event)';
   const pub = check(await db('ALL').from('hm_programs').select(cols).eq('space', SPACE).order('created_at', { ascending: false }));
   // Private program sirf unke code se milte hain jo is phone ne isi space me link se khole the
   const mine = myPrograms().filter(x => (x.private || x.joined) && (x.space || SPACE) === SPACE && !pub.some(p => p.code === x.code));
@@ -302,6 +302,8 @@ function renderHome() {
     ${list.length ? `<div class="prog-cards">${list.map(p => {
       const L = progLook(p), ms = p.hm_members || [];
       const got = ms.reduce((t, m) => t + num(m.paid), 0), ppl = ms.reduce((t, m) => t + people(m), 0);
+      // Bacha = collection - kharcha (udhaar chukane aur deposit aane ke baad)
+      const left = calc({ program: p, members: ms, expenses: p.hm_expenses || [] }).finalBal;
       return `<div class="prog-card" data-code="${esc(p.code)}" style="--pc:${L.a}">
         <div class="prog-icon" style="background:${L.grad}">${L.icon}</div>
         <div class="grow">
@@ -313,7 +315,7 @@ function renderHome() {
             <span class="muted">${p.type === 'flat' ? `🏢 ${ms.length} · ` : ''}👥 ${ppl}</span>
           </div>
         </div>
-        <div class="prog-amt"><b>${rs(got)}</b><span class="muted">${fmtDT(new Date(p.created_at))}</span></div>
+        <div class="prog-amt"><span class="muted">💰 Bacha</span><b class="${left < 0 ? 'red' : ''}">${rs(left)}</b><span class="muted">${(p.hm_expenses || []).length ? `kul ${rs(got)}` : fmtDT(new Date(p.created_at))}</span></div>
       </div>`; }).join('')}</div>`
       : `<div class="card empty">${q ? 'Koi program nahi mila.' : `<div style="font-size:40px">📒</div><p><b>Abhi koi program nahi hai.</b><br>Neeche ＋ dabake naya program banao.</p>`}</div>`}
     <button class="fab" id="newBtn">＋ Naya Program</button>`;
@@ -899,12 +901,9 @@ function collectSummary(d, c) {
   const paidPeople = paidUnits.reduce((s, m) => s + people(m), 0);
   return `
     <div class="stats">
-      <div class="stat wide"><div class="label">💵 Kul collection aaya</div><div class="value">${rs(c.collected)}</div>
+      <div class="stat wide"><div class="label">💰 Bacha (dena hai)</div><div class="value ${c.finalBal < 0 ? 'red' : ''}">${rs(c.finalBal)}</div>
         <div class="muted">${paidUnits.length} ${flat ? 'flat' : 'member'}${flat ? ` (${paidPeople} log)` : ''} ne diya${c.fixed > 0 ? ` · ${rs(c.pending)} abhi baaki` : ''}</div></div>
-      ${d.expenses.length ? statGrid([
-        ['🧾 Kharcha', rs(c.totalExp)],
-        ['💰 Bacha (dena hai)', `<span class="${c.finalBal < 0 ? 'red' : 'green'}">${rs(c.finalBal)}</span>`],
-      ]) : ''}
+      ${statGrid([['💵 Kul collection', rs(c.collected)], ['🧾 Kharcha', rs(c.totalExp)]])}
       ${statGrid([
         flat ? ['🏢 Total flats', c.n] : ['👥 Total members', c.n],
         flat ? ['👥 Total members', c.persons] : ['🧑 Total log', c.persons],
