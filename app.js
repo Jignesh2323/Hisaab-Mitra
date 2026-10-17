@@ -693,8 +693,8 @@ function renderProgram() {
   const d = state.data, p = d.program, c = calc(d);
   $('#title').textContent = `${progLook(p).icon} ${p.name}`;
   const tabs = [['summary', '📊', 'Summary'], ['members', p.type === 'flat' ? '🏢' : '👥', p.type === 'flat' ? 'Flats' : 'Members'], ['expenses', '🧾', 'Kharcha'], ['hisaab', '🤝', 'Hisaab']]
-    .filter(([k]) => !p.collect_only || k === 'summary' || k === 'members');
-  if (p.collect_only && !['summary', 'members'].includes(state.tab)) state.tab = 'summary';
+    .filter(([k]) => !p.collect_only || k !== 'hisaab');
+  if (p.collect_only && state.tab === 'hisaab') state.tab = 'summary';
   let body = '';
   if (state.tab === 'summary') body = summaryView(d, c);
   if (state.tab === 'members') body = membersView(d, c);
@@ -901,6 +901,10 @@ function collectSummary(d, c) {
     <div class="stats">
       <div class="stat wide"><div class="label">💵 Kul collection aaya</div><div class="value">${rs(c.collected)}</div>
         <div class="muted">${paidUnits.length} ${flat ? 'flat' : 'member'}${flat ? ` (${paidPeople} log)` : ''} ne diya${c.fixed > 0 ? ` · ${rs(c.pending)} abhi baaki` : ''}</div></div>
+      ${d.expenses.length ? statGrid([
+        ['🧾 Kharcha', rs(c.totalExp)],
+        ['💰 Bacha (dena hai)', `<span class="${c.finalBal < 0 ? 'red' : 'green'}">${rs(c.finalBal)}</span>`],
+      ]) : ''}
       ${statGrid([
         flat ? ['🏢 Total flats', c.n] : ['👥 Total members', c.n],
         flat ? ['👥 Total members', c.persons] : ['🧑 Total log', c.persons],
