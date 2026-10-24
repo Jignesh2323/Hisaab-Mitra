@@ -1,4 +1,4 @@
-const CACHE = 'hisaabmitra-v65';
+const CACHE = 'hisaabmitra-v66';
 const SHELL = ['./', './index.html', './style.css', './app.js', './i18n.js', './i18n-dict.js', './manifest.json',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './logo.svg'];
 // Bahar ki files jo app ko chahiye (Supabase library, fonts) — ye bhi phone me rakhte hain

@@ -204,7 +204,9 @@ function calc(d) {
   const depReturned = deps.filter(depBack).reduce((s, e) => s + num(e.returned), 0);
   const depLost = deps.filter(depBack).reduce((s, e) => s + realAmt(e), 0);
   // Collector ke haath me abhi kitna hai (deposit me fasa paisa bahar, udhaar abhi chukaya nahi)
-  const balance = collected - expenses.filter(e => !e.paid_by).reduce((s, e) => s + cashOut(e), 0);
+  const refundGiven = members.reduce((s, m) => s + refunded(m), 0);
+  const refundPending = refundOn(p) ? members.reduce((s, m) => s + refundDue(p, m), 0) : 0;
+  const balance = collected - refundGiven - expenses.filter(e => !e.paid_by).reduce((s, e) => s + cashOut(e), 0);
   const owed = expenses.reduce((s, e) => s + owedOf(e), 0);
   const owedBy = new Map();
   expenses.filter(e => payer(e) && !isDep(e)).forEach(e => {
@@ -212,7 +214,7 @@ function calc(d) {
     o.total += num(e.amount); o.owed += owedOf(e); o.items++; owedBy.set(k, o);
   });
   // Sab udhaar chukane aur deposit wapas aane ke baad asli bacha paisa
-  const finalBal = balance - owed + depPending;
+  let finalBal = balance - owed + depPending;
   // Kharcha logon ki ginti se baanta jata hai: per member hissa x us flat ke log
   const persons = members.reduce((s, m) => s + people(m), 0);
   const perPerson = persons ? totalExp / persons : 0;
@@ -252,7 +254,8 @@ function calc(d) {
   });
   const events = [...evMap].map(([name, total]) => ({ name, total, perPerson: persons ? total / persons : 0 }))
     .sort((a, b) => (a.name === 'Bina program') - (b.name === 'Bina program') || a.name.localeCompare(b.name, 'en', { numeric: true }));
-  return { owed, owedBy: [...owedBy.values()].sort((a, b) => b.owed - a.owed), finalBal, depPending, depReturned, depLost, depCount: deps.filter(e => !depBack(e)).length, n, persons, events, perPerson, collected, fundExp, personalExp, totalExp, balance, fixed, expected, pending, counts, rows, settlements };
+  finalBal -= refundPending;
+  return { refundGiven, refundPending, owed, owedBy: [...owedBy.values()].sort((a, b) => b.owed - a.owed), finalBal, depPending, depReturned, depLost, depCount: deps.filter(e => !depBack(e)).length, n, persons, events, perPerson, collected, fundExp, personalExp, totalExp, balance, fixed, expected, pending, counts, rows, settlements };
 }
 
 // ---------- HOME ----------
@@ -273,7 +276,7 @@ function goHome(fromHistory) {
 // Sabhi programs (sabko dikhte hain), naye pehle
 async function loadPrograms() {
   // hm_members(people): har program ke flat/member aur log ginne ke liye
-  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,icon,owner_hash,track_pass,pass_label,fixed_amount,hm_members(id,people,paid,passes),hm_expenses(amount,is_deposit,returned,payer_name,repaid,paid_by,event)';
+  const cols = 'id,code,name,type,days,created_at,is_private,collect_only,icon,owner_hash,track_pass,pass_label,fixed_amount,refund_per_head,hm_members(id,people,paid,passes,refunded),hm_expenses(amount,is_deposit,returned,payer_name,repaid,paid_by,event)';
   const pub = check(await db('ALL').from('hm_programs').select(cols).eq('space', SPACE).order('created_at', { ascending: false }));
   // Private program sirf unke code se milte hain jo is phone ne isi space me link se khole the
   const mine = myPrograms().filter(x => (x.private || x.joined) && (x.space || SPACE) === SPACE && !pub.some(p => p.code === x.code));
@@ -522,6 +525,11 @@ const passOn = p => !!p?.track_pass;
 const passName = p => (p?.pass_label || 'Pass').trim() || 'Pass';
 const passes = m => Math.max(0, parseInt(m.passes) || 0);
 const passDue = m => Math.max(0, people(m) - passes(m));
+// Wapsi (refund): per vyakti kitna lautana, kis flat ko kitna lauta diya
+const refundOn = p => num(p?.refund_per_head) > 0;
+const refundOf = (p, m) => num(p.refund_per_head) * people(m);
+const refunded = m => num(m.refunded);
+const refundDue = (p, m) => Math.max(0, refundOf(p, m) - refunded(m));
 const multiDay = p => daysOf(p) > 1 || (p.id && state.data?.program?.id === p.id && state.data.expenses.some(e => (e.event || '').trim()));
 
 // Program ki pehchan: icon aur rang (naam ke shabdon se apne aap)
@@ -572,6 +580,8 @@ function programForm(existing) {
       💵 Sirf collection (kharcha / hisaab nahi)</label>
     <label class="row" style="gap:8px;color:var(--text);margin-top:10px"><input type="checkbox" id="pPass" ${p.track_pass ? 'checked' : ''} style="width:20px;height:20px">
       🎟️ Pass / cheez dena track karo</label>
+    <label>💸 Wapsi per vyakti (₹) <span class="muted">— program ke baad lautana ho, warna 0</span></label>
+    <input type="number" id="pRefund" inputmode="decimal" min="0" value="${num(p.refund_per_head) || ''}" placeholder="0">
     <div id="pPassBox" class="${p.track_pass ? '' : 'hidden'}"><label>Kya dena hai? (naam)</label>
       <input type="text" id="pPassName" placeholder="Jaise Pass, Coupon, Kit" value="${esc(p.pass_label || 'Pass')}"></div>
     <p class="muted small" style="margin:2px 0 0">Paisa jama karke society ya kisi aur ko dena ho. Bas kisne kitna diya aur kul kitna aaya, wahi dikhega.</p>
@@ -618,16 +628,17 @@ function programForm(existing) {
     const day_dates = many ? [...$('#sheet').querySelectorAll('[data-dd]')].map(i => i.value || '') : [];
     const is_private = $('#pPrivate').checked;
     const collect_only = $('#pCollect').checked;
+    const refund_per_head = num($('#pRefund').value);
     const track_pass = $('#pPass').checked, pass_label = ($('#pPassName').value || 'Pass').trim() || 'Pass';
     $('#pSave').disabled = true;
     try {
       if (existing) {
-        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, day_dates, is_private, collect_only, icon, track_pass, pass_label }).eq('id', existing.id).select().single());
+        check(await db(existing.code).from('hm_programs').update({ name, type, fixed_amount, days, day_dates, is_private, collect_only, icon, track_pass, pass_label, refund_per_head }).eq('id', existing.id).select().single());
         saveMyProgram({ ...existing, name, type, is_private });
         closeModal(); toast('Save ho gaya'); refresh();
       } else {
         const code = newCode();
-        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, day_dates, is_private, collect_only, icon, track_pass, pass_label, space: SPACE, owner_hash: await myOwner() }).select().single());
+        const prog = check(await db(code).from('hm_programs').insert({ code, name, type, fixed_amount, days, day_dates, is_private, collect_only, icon, track_pass, pass_label, refund_per_head, space: SPACE, owner_hash: await myOwner() }).select().single());
         const copyFrom = $('#pCopy')?.value;
         if (copyFrom) {
           const srcProg = (state.programs || []).find(x => x.code === copyFrom);
@@ -735,6 +746,7 @@ function summaryView(d, c) {
       ${c.fixed > 0 ? `
       <div class="stat wide" style="--g:linear-gradient(135deg,#f59e0b,#ef4444);--glow:rgba(239,68,68,.5)"><div class="label">⏳ Abhi baaki (pending)</div><div class="value amber">${rs(c.pending)}</div></div>` : ''}
     </div>
+    ${refundCard(d)}
     ${passCard(d)}
     ${owedCard(c)}
     ${depositCard(d, c)}
@@ -746,7 +758,7 @@ function summaryView(d, c) {
       <div class="row between small"><span>❌ Nahi diya</span><b>${c.counts.no}</b></div>
       ${c.personalExp > 0 ? `<div class="muted" style="margin-top:8px">Fund se kharcha ${rs(c.fundExp)} · Members ne khud kiya ${rs(c.personalExp)}</div>` : ''}
     </div>
-    ${d.program.collect_only ? passCard(d) : ''}
+    ${d.program.collect_only ? refundCard(d) + passCard(d) : ''}
     <div class="card">
       <div class="bold" style="margin-bottom:8px">📤 Export / Backup</div>
       <div class="btns">
@@ -780,6 +792,7 @@ function membersView(d, c) {
     if (state.filter === 'paid' && st !== 'ok') return false;
     if (state.filter === 'pending' && st === 'ok') return false;
     if (state.filter === 'passdue' && !passDue(m)) return false;
+    if (state.filter === 'refunddue' && !refundDue(p, m)) return false;
     return !q || memberLabel(p, m).toLowerCase().includes(q);
   });
   const icon = { ok: '✅', part: '🟡', no: '❌' };
@@ -790,6 +803,7 @@ function membersView(d, c) {
       <button class="chip ${state.filter === 'paid' ? 'active' : ''}" data-f="paid">✅ Diya (${c.counts.ok})</button>
       <button class="chip ${state.filter === 'pending' ? 'active' : ''}" data-f="pending">❌ Pending (${c.counts.no + c.counts.part})</button>
       ${passOn(p) ? `<button class="chip ${state.filter === 'passdue' ? 'active' : ''}" data-f="passdue">🎟️ ${esc(passName(p))} baaki (${d.members.filter(passDue).length})</button>` : ''}
+      ${refundOn(p) ? `<button class="chip ${state.filter === 'refunddue' ? 'active' : ''}" data-f="refunddue">💸 Wapsi baaki (${d.members.filter(m => refundDue(p, m)).length})</button>` : ''}
       <button class="chip" id="bulkBtn">＋ Ek saath add</button>
       ${isGroup(p) && d.members.length ? '<button class="chip" id="roundBtn">💰 Collection lo</button>' : ''}
     </div>
@@ -799,7 +813,8 @@ function membersView(d, c) {
   function row(m) {
     const st = memberStatus(p, m), due = c.fixed > 0 ? Math.max(0, c.fixed * people(m) - num(m.paid)) : 0;
     const info = [p.type === 'flat' ? faces(people(m)) : '', due > 0 ? `${rs(due)} baaki` : '',
-      passOn(p) ? `<span class="pass-badge ${passDue(m) ? 'due' : 'done'}">🎟️ ${passes(m)}/${people(m)}</span>` : ''].filter(Boolean).join(' · ');
+      passOn(p) ? `<span class="pass-badge ${passDue(m) ? 'due' : 'done'}">🎟️ ${passes(m)}/${people(m)}</span>` : '',
+      refundOn(p) ? `<span class="pass-badge ${refundDue(p, m) ? 'due' : 'done'}">💸 ${refundDue(p, m) ? rs(refundDue(p, m)) + ' baaki' : 'mili'}</span>` : ''].filter(Boolean).join(' · ');
     if (isGroup(p)) {
       const r = c.rows.find(x => x.id === m.id);
       return `<div class="item" data-mid="${m.id}">
@@ -881,6 +896,22 @@ function expensesView(d, c) {
 
 // Sirf collection: kul jama, kitne flat/member ne diya, kitna baaki
 // Pass vitran ka hisaab
+// Wapsi ka hisaab
+function refundCard(d) {
+  const p = d.program;
+  if (!refundOn(p)) return '';
+  const total = d.members.reduce((s, m) => s + refundOf(p, m), 0), given = d.members.reduce((s, m) => s + Math.min(refunded(m), refundOf(p, m)), 0);
+  const due = d.members.filter(m => refundDue(p, m) > 0);
+  return `<div class="card">
+    <div class="bold">💸 Wapsi (${rs(p.refund_per_head)} / vyakti)</div>
+    <div class="row between"><span>Diya <b class="green">${rs(given)}</b></span><span>Baaki <b class="${total - given ? 'red' : 'green'}">${rs(total - given)}</b></span><span class="muted">kul ${rs(total)}</span></div>
+    <div class="pass-bar"><i style="width:${total ? Math.round(given * 100 / total) : 0}%"></i></div>
+    ${due.length ? `<div class="muted" style="margin-top:6px" data-notr>Baaki: ${due.slice(0, 14).map(m => esc(memberLabel(p, m)) + ` (${rs(refundDue(p, m))})`).join(', ')}${due.length > 14 ? ' …' : ''}</div>
+      <div class="btns" style="margin-top:8px"><button class="btn sm" data-f-go="refunddue">💸 Baaki wale dekho (${due.length})</button></div>`
+      : '<div class="green small" style="margin-top:6px">✅ Sabko wapsi mil gayi</div>'}
+  </div>`;
+}
+
 function passCard(d) {
   const p = d.program;
   if (!passOn(p)) return '';
@@ -913,7 +944,7 @@ function collectSummary(d, c) {
         c.fixed > 0 ? ['⏳ Baaki', rs(c.pending)] : null,
       ])}
     </div>
-    ${d.program.collect_only ? passCard(d) : ''}
+    ${d.program.collect_only ? refundCard(d) + passCard(d) : ''}
     <div class="card">
       <div class="bold" style="margin-bottom:8px">📤 Export / Backup</div>
       <div class="btns">
@@ -1219,6 +1250,8 @@ function memberForm(m) {
     ${isFlat ? `<label>Flat number</label><input type="text" id="mFlat" placeholder="Jaise A-101" value="${esc(m?.flat_no)}">` : ''}
     <label>${isFlat ? 'Naam (optional)' : 'Naam'}</label><input type="text" id="mName" value="${esc(m?.name)}">
     ${isFlat || isTrip(p) ? `<label>${isFlat ? 'Kitne member (log)' : 'Kitne log (couple = 2)'}</label><input type="number" id="mPeople" inputmode="numeric" min="1" step="1" value="${m ? people(m) : 1}">` : ''}
+    ${refundOn(p) ? `<label>💸 Wapsi di (₹) <span class="muted">— is flat ki kul ${m ? rs(refundOf(p, m)) : ''}</span></label>
+      <div class="row"><input type="number" id="mRefund" inputmode="decimal" min="0" value="${m ? refunded(m) || '' : ''}" placeholder="0" style="flex:1"><button type="button" class="btn sm" id="mRefundAll">Puri</button></div>` : ''}
     ${passOn(p) ? `<label>🎟️ ${esc(passName(p))} kitne diye</label>
       <div class="row"><input type="number" id="mPass" inputmode="numeric" min="0" step="1" value="${m ? passes(m) : 0}" style="flex:1"><button type="button" class="btn sm" id="mPassAll">Sabko</button></div>` : ''}
     <label>Kitna diya (₹)</label>
@@ -1235,6 +1268,7 @@ function memberForm(m) {
   const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
   on('mFull', () => $('#mPaid').value = num(fixed * ($('#mPeople') ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1)));
   on('mZero', () => $('#mPaid').value = 0);
+  on('mRefundAll', () => $('#mRefund').value = num(num(p.refund_per_head) * ($('#mPeople') ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1)));
   on('mPassAll', () => $('#mPass').value = $('#mPeople') ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1);
   on('mAdd', () => {
     const extra = num(prompt('Kitna aur diya? (₹)'));
@@ -1256,6 +1290,7 @@ function memberForm(m) {
     const row = { name: $('#mName').value.trim(), flat_no: isFlat ? $('#mFlat').value.trim() : '', paid: num($('#mPaid').value),
       people: isFlat || isTrip(p) ? Math.max(1, parseInt($('#mPeople').value) || 1) : 1 };
     if (passOn(p)) row.passes = Math.max(0, parseInt($('#mPass').value) || 0);
+    if (refundOn(p)) row.refunded = Math.max(0, num($('#mRefund').value));
     if (!row.name && !row.flat_no) return toast(isFlat ? 'Flat number daalo' : 'Naam daalo');
     if (isFlat && row.flat_no && state.data.members.some(x => x.id !== m?.id && flatKey(x.flat_no) === flatKey(row.flat_no)))
       return toast(`Flat ${row.flat_no} is program me pehle se hai`);
@@ -1599,7 +1634,7 @@ async function restoreBackup(file, fromHistory) {
     const code = newCode(), c = db(code);
     if (!SPACE) throw new Error('Pehle space banao');
     const prog = check(await c.from('hm_programs').insert({
-      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), day_dates: dayDates(data.program), is_private: !!data.program.is_private, collect_only: !!data.program.collect_only, track_pass: !!data.program.track_pass, pass_label: data.program.pass_label || 'Pass', space: SPACE, owner_hash: await myOwner(),
+      code, name: data.program.name + (fromHistory ? '' : ' (restore)'), type: data.program.type, fixed_amount: num(data.program.fixed_amount), days: daysOf(data.program), day_dates: dayDates(data.program), is_private: !!data.program.is_private, collect_only: !!data.program.collect_only, track_pass: !!data.program.track_pass, refund_per_head: num(data.program.refund_per_head), pass_label: data.program.pass_label || 'Pass', space: SPACE, owner_hash: await myOwner(),
     }).select().single());
     const idMap = {};
     for (const m of data.members || []) {
