@@ -1,0 +1,21 @@
+# Supabase free plan 7 din bina use ke project pause kar deta hai.
+# Ye har 2 din me database se ek chhota sawaal poochta hai, taaki project jaagta rahe.
+# (Publishable key waise bhi app.js me public hai; ye sirf padhta hai, kuchh badalta nahi.)
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: "17 3 */2 * *"   # har 2 din, subah ~8:47 IST
+  workflow_dispatch: {}       # GitHub Actions se haath se bhi chala sakte ho
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            "https://wvdxofwaluoktvwatycy.supabase.co/rest/v1/hm_programs?select=id&limit=1" \
+            -H "apikey: sb_publishable_Tt81pt-a-kZvn403iSWBUw_u6dktCoI")
+          echo "Supabase status: $code"
+          test "$code" = "200"
